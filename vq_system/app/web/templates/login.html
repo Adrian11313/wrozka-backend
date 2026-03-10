@@ -1,0 +1,18 @@
+﻿{% extends "base.html" %}
+{% set title = "Login" %}
+{% block content %}
+<div class="card" style="max-width: 420px;">
+  <form method="post" action="/login">
+    <div class="row" style="flex-direction: column; align-items: stretch;">
+      <label>Username</label>
+      <input name="username" />
+      <label>Haso</label>
+      <input name="password" type="password" />
+      <button type="submit">Zaloguj</button>
+      {% if error %}
+        <div style="color: #b00020; margin-top: 8px;">{{ error }}</div>
+      {% endif %}
+    </div>
+  </form>
+</div>
+{% endblock %}

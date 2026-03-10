@@ -1,0 +1,663 @@
+﻿{% extends "base.html" %}
+{% set title = "Macierz VQ" %}
+{% block content %}
+
+<h3>Macierz VQ (Projekt #{{ project_id }})</h3>
+
+<style>
+  
+  /* Context menu */
+  .ctxItem { padding: 6px 8px; border-radius: 8px; cursor: pointer; }
+  .ctxItem:hover { background: rgba(255,255,255,0.12); }
+  .ctxMeta { font-size: 11px; color: rgba(255,255,255,0.75); margin-bottom: 2px; }
+  .ctxTxt { font-size: 12px; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
+table { border-collapse: collapse; }
+
+  th, td { border: 1px solid #ddd; vertical-align: top; }
+
+  /* ✅ Zawijanie + łamanie długich ciągów (żeby tabela się nie rozpychała) */
+  th, td {
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  /* Jeśli chcesz stałe szerokości, możesz ustawić max-width */
+  th { max-width: 260px; }
+  td { max-width: 260px; }
+
+  td.cell { cursor: pointer; position: relative; }
+  td.cell:hover { background: #f7f7f7; }
+
+  .cellmeta{
+    font-size: 11px;
+    color: #555;
+    margin-bottom: 6px;
+  }
+  .cellmeta .u{
+    font-weight: 600;
+  }
+
+  .content{
+    white-space: pre-wrap;   /* zachowuje enter-y i zawija */
+    word-break: break-word;
+    overflow-wrap: anywhere;
+
+    /* ✅ opcjonalnie: nie rośnie w pionie, tylko scroll w środku */
+    max-height: 110px;
+    overflow: auto;
+  }
+
+  .vmeta { font-size: 10px; color: #777; margin-top: 6px; }
+
+  /* Tooltip */
+  .tip {
+    display: none;
+    position: absolute;
+    top: 100%;
+    margin-top: 6px;
+    width: 520px;
+    max-width: 70vw;
+    background: #111;
+    color: #fff;
+    border-radius: 10px;
+    padding: 10px;
+    z-index: 50;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    font-size: 12px;
+
+    /* ✅ jak historia długa -> scroll */
+    max-height: 320px;
+    overflow: auto;
+  }
+
+  /* ✅ RÓWNY UKŁAD: 2 kolumny (meta | treść) */
+  .tip .row {
+    display: grid;
+    grid-template-columns: 170px 1fr;
+    gap: 10px;
+
+    margin: 6px 0;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.15);
+    align-items: start;
+  }
+  .tip .row:last-child { border-bottom: none; }
+
+  .tip .meta {
+    color: rgba(255,255,255,0.75);
+    font-size: 11px;
+    margin: 0;
+    line-height: 1.25;
+    white-space: normal;
+  }
+
+  .tip .txt {
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    line-height: 1.25;
+  }
+
+  .tip .empty { color: rgba(255,255,255,0.7); }
+</style>
+
+<table cellpadding="8" style="table-layout: fixed; width: 100%;">
+  <tr>
+    <th style="min-width:260px;">Temat ↓ / Dzia →</th>
+    {% for d in departments %}
+      <th style="min-width:220px;">{{ d.name }}</th>
+    {% endfor %}
+  </tr>
+
+  {% for t in topics %}
+    <tr>
+      <td style="min-width:260px;"><b>{{ t.title }}</b></td>
+      {% for d in departments %}
+        {% set key = t.id ~ '_' ~ d.id %}
+        {% set p = pos_map.get(key) %}
+        <td class="cell"
+            data-topic-id="{{ t.id }}"
+            data-department-id="{{ d.id }}"
+            data-topic-title="{{ t.title|e }}"
+            data-department-name="{{ d.name|e }}"
+            data-content="{{ (p.content if p else '')|e }}"
+            data-version="{{ (p.version if p else 1) }}"
+        >
+          <div class="cellmeta"><span class="muted">—</span></div>
+
+          {% if p and p.content %}
+            <div class="content">{{ p.content }}</div>
+          {% else %}
+            <div class="content" style="color:#999;">-</div>
+          {% endif %}
+
+          <div class="vmeta">v{{ (p.version if p else 1) }}</div>
+
+          <div class="tip"></div>
+        </td>
+      {% endfor %}
+    </tr>
+  {% endfor %}
+</table>
+
+<!-- Modal (edycja) -->
+<div id="backdrop" style="position:fixed; inset:0; background:rgba(0,0,0,0.35); display:none; align-items:center; justify-content:center;">
+  <div style="background:#fff; width:720px; max-width:calc(100vw - 40px); border-radius:14px; padding:16px; box-shadow:0 10px 30px rgba(0,0,0,0.25);">
+    <h3 id="modalTitle" style="margin-top:0;"></h3>
+    <div id="modalSub" style="color:#666; margin-bottom:8px;"></div>
+    <textarea id="modalText" style="width:100%; min-height:200px;"></textarea>
+
+    <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:10px;">
+      <button id="btnCancel" type="button">Anuluj</button>
+      <button id="btnSave" type="button">Zapisz</button>
+    </div>
+    <div id="modalMsg" style="margin-top:10px;"></div>
+  </div>
+</div>
+
+<script type="text/javascript">
+(function(){
+  var backdrop = document.getElementById("backdrop");
+  var modalTitle = document.getElementById("modalTitle");
+  var modalSub = document.getElementById("modalSub");
+  var modalText = document.getElementById("modalText");
+  var modalMsg = document.getElementById("modalMsg");
+  var btnCancel = document.getElementById("btnCancel");
+  var btnSave = document.getElementById("btnSave");
+
+  var currentCell = null;
+
+  function xhr(method, url, body, contentType, cb) {
+    var r = new XMLHttpRequest();
+    r.open(method, url, true);
+    if (contentType) r.setRequestHeader("Content-Type", contentType);
+    r.onreadystatechange = function() {
+      if (r.readyState !== 4) return;
+      cb(r.status, r.responseText);
+    };
+    r.send(body);
+  }
+
+  function formatDate(iso) {
+    if (!iso) return "-";
+    var s = String(iso);
+    s = s.replace("T"," ");
+    s = s.replace("Z","");
+    if (s.indexOf(".") !== -1) s = s.split(".")[0];
+    return s;
+  }
+
+  function setCellMeta(cell, changedAt, changedBy) {
+    var el = cell.getElementsByClassName("cellmeta")[0];
+    if (!el) return;
+
+    var at = formatDate(changedAt);
+    var by = (changedBy === null || changedBy === undefined) ? "-" : String(changedBy);
+
+    if (!changedAt && (changedBy === null || changedBy === undefined)) {
+      el.innerHTML = "<span class='muted'>—</span>";
+      return;
+    }
+
+    el.innerHTML = at + " • <span class='u'>" + escapeHtml(by) + "</span>";
+  }
+
+  function escapeHtml(s) {
+    s = String(s);
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\"/g,"&quot;").replace(/\'/g,"&#39;");
+  }
+
+  // -------- EDIT MODAL ----------
+  function openModal(cell) {
+    currentCell = cell;
+    modalMsg.style.color = "#666";
+    modalMsg.innerHTML = "";
+
+    var topicId = cell.getAttribute("data-topic-id");
+    var depId = cell.getAttribute("data-department-id");
+
+    modalTitle.innerHTML = cell.getAttribute("data-topic-title");
+    modalSub.innerHTML = "Dzia: " + cell.getAttribute("data-department-name");
+
+    xhr("GET", "/web/positions/by_cell/" + topicId + "/" + depId, null, null, function(status, text){
+      if (status === 401) {
+        modalMsg.style.color = "#b00020";
+        modalMsg.innerHTML = "Zaloguj si.";
+        backdrop.style.display = "flex";
+        return;
+      }
+      if (status >= 200 && status < 300) {
+        var p = null;
+        try { p = text ? JSON.parse(text) : null; } catch(e) { p = null; }
+
+        if (p) {
+          cell.setAttribute("data-content", p.content || "");
+          cell.setAttribute("data-version", String(p.version));
+          setCellMeta(cell, p.last_changed_at, p.last_changed_by);
+        } else {
+          cell.setAttribute("data-content", "");
+          cell.setAttribute("data-version", "1");
+          setCellMeta(cell, null, null);
+        }
+
+        modalText.value = cell.getAttribute("data-content") || "";
+        backdrop.style.display = "flex";
+        return;
+      }
+      modalMsg.style.color = "#b00020";
+      modalMsg.innerHTML = "Bd: " + status + " " + text;
+      backdrop.style.display = "flex";
+    });
+  }
+
+  function closeModal() {
+    backdrop.style.display = "none";
+    currentCell = null;
+  }
+
+  btnCancel.onclick = closeModal;
+
+  btnSave.onclick = function(){
+    if (!currentCell) return;
+
+    modalMsg.style.color = "#666";
+    modalMsg.innerHTML = "";
+
+    var topicId = currentCell.getAttribute("data-topic-id");
+    var departmentId = currentCell.getAttribute("data-department-id");
+    var clientVersion = currentCell.getAttribute("data-version") || "1";
+    var content = modalText.value || "";
+
+    var body = "topic_id=" + encodeURIComponent(topicId)
+      + "&department_id=" + encodeURIComponent(departmentId)
+      + "&content=" + encodeURIComponent(content)
+      + "&client_version=" + encodeURIComponent(clientVersion);
+
+    xhr("POST", "/web/positions/upsert", body, "application/x-www-form-urlencoded", function(status, text){
+      if (status === 401) {
+        modalMsg.style.color = "#b00020";
+        modalMsg.innerHTML = "Zaloguj si.";
+        return;
+      }
+      if (status === 409) {
+        modalMsg.style.color = "#b00020";
+        modalMsg.innerHTML = "Konflikt wersji: kto zmieni wpis. Otwórz komórk ponownie i zapisz.";
+        return;
+      }
+      if (!(status >= 200 && status < 300)) {
+        modalMsg.style.color = "#b00020";
+        modalMsg.innerHTML = "Bd: " + status + " " + text;
+        return;
+      }
+
+      var p = JSON.parse(text);
+
+      var key = topicId + "_" + departmentId;
+      delete tipCache[key];
+
+      currentCell.setAttribute("data-content", p.content || "");
+      currentCell.setAttribute("data-version", String(p.version));
+
+      var contentDiv = currentCell.getElementsByClassName("content")[0];
+      var metaDiv = currentCell.getElementsByClassName("vmeta")[0];
+
+      if (p.content && p.content.length) {
+        contentDiv.style.color = "#000";
+        contentDiv.innerHTML = escapeHtml(p.content);
+      } else {
+        contentDiv.style.color = "#999";
+        contentDiv.innerHTML = "-";
+      }
+
+      metaDiv.innerHTML = "v" + p.version;
+
+      // ✅ NOWE: od razu pokaż w komórce datę+user (z odpowiedzi backendu)
+      setCellMeta(currentCell, p.last_changed_at, p.last_changed_by);
+
+      modalMsg.style.color = "green";
+      modalMsg.innerHTML = "Zapisano.";
+      setTimeout(closeModal, 250);
+    });
+  };
+
+  backdrop.onclick = function(e){
+    if (e.target === backdrop) closeModal();
+  };
+
+  // -------- HOVER HISTORY TOOLTIP ----------
+// -------- HOVER HISTORY TOOLTIP ----------
+  var tipCache = {}; // key "topicId_departmentId" -> html string
+  var ctxOpen = false; // when context menu is open, disable tooltip hover
+
+  function buildTipHtml(items) {
+    if (!items || !items.length) {
+      return "<div class='empty'>Brak historii (pierwszy wpis).</div>";
+    }
+
+    var html = "";
+
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+
+      var meta = "v" + it.new_version
+        + " • " + formatDate(it.changed_at)
+        + " • user_id=" + it.changed_by;
+
+      var content = (it.new_content && it.new_content.length)
+        ? it.new_content
+        : "(pusto)";
+
+      html += "<div class='row'>"
+        + "<div class='meta'>" + escapeHtml(meta) + "</div>"
+        + "<div class='txt'>" + escapeHtml(content) + "</div>"
+        + "</div>";
+    }
+
+    return html;
+  }
+  function positionTip(cell) {
+    var tip = cell.getElementsByClassName("tip")[0];
+    if (!tip) return;
+
+    tip.style.left = "";
+    tip.style.right = "";
+
+    tip.style.display = "block";
+
+    var rect = tip.getBoundingClientRect();
+    var pad = 10;
+
+    if (rect.right > window.innerWidth - pad) {
+      tip.style.left = "auto";
+      tip.style.right = "6px";
+    } else {
+      tip.style.right = "auto";
+      tip.style.left = "6px";
+    }
+
+    rect = tip.getBoundingClientRect();
+    if (rect.left < pad) {
+      tip.style.left = pad + "px";
+      tip.style.right = "auto";
+    }
+  }
+
+
+  function showTip(cell) {
+    var tip = cell.getElementsByClassName("tip")[0];
+    if (!tip) return;
+    tip.style.display = "block";
+    positionTip(cell);
+  }
+
+  function hideTip(cell) {
+    var tip = cell.getElementsByClassName("tip")[0];
+    if (!tip) return;
+    tip.style.display = "none";
+  }
+
+  
+
+  function hideAllTips() {
+    var tips = document.getElementsByClassName('tip');
+    for (var i=0; i<tips.length; i++) tips[i].style.display = 'none';
+  }
+function loadHistory(cell) {
+    
+    if (typeof ctxOpen !== 'undefined' && ctxOpen) return;
+var topicId = cell.getAttribute("data-topic-id");
+    var depId = cell.getAttribute("data-department-id");
+    var key = topicId + "_" + depId;
+
+    var tip = cell.getElementsByClassName("tip")[0];
+    if (!tip) return;
+
+    if (tipCache[key]) {
+      tip.innerHTML = tipCache[key];
+      showTip(cell);
+      return;
+    }
+
+    tip.innerHTML = "<div class='empty'>Ładowanie historii...</div>";
+    showTip(cell);
+
+    xhr("GET", "/web/positions/history/by_cell/" + topicId + "/" + depId, null, null, function(status, text){
+      if (status === 401) {
+        tip.innerHTML = "<div class='empty'>Zaloguj się.</div>";
+        return;
+      }
+      if (!(status >= 200 && status < 300)) {
+        tip.innerHTML = "<div class='empty'>Błąd: " + status + "</div>";
+        return;
+      }
+
+      var items = [];
+      try { items = text ? JSON.parse(text) : []; } catch(e) { items = []; }
+
+      var html = buildTipHtml(items);
+      tipCache[key] = html;
+      tip.innerHTML = html;
+    });
+  }
+
+  // -------- CONTEXT MENU (RIGHT CLICK) ----------
+  
+  // ctxMenu is rendered AFTER <script>, so we must get elements lazily
+  var ctxMenu = null;
+  var ctxTitle = null;
+  var ctxItems = null;
+
+  function ensureCtxEls() {
+    if (!ctxMenu) ctxMenu = document.getElementById("ctxMenu");
+    if (!ctxTitle) ctxTitle = document.getElementById("ctxTitle");
+    if (!ctxItems) ctxItems = document.getElementById("ctxItems");
+    return !!(ctxMenu && ctxTitle && ctxItems);
+  }
+function closeContextMenu() {
+    if (!ctxMenu) return;
+    ctxMenu.style.display = "none";
+    if (ctxItems) ctxItems.innerHTML = "";
+  }
+
+  document.addEventListener("click", function(){ closeContextMenu(); });
+  document.addEventListener("scroll", function(){ closeContextMenu(); }, true);
+
+  function openContextMenu(cell, x, y) {
+    
+    if (!ensureCtxEls()) return;
+if (!ctxMenu) return;
+
+    var topicId = cell.getAttribute("data-topic-id");
+    var depId = cell.getAttribute("data-department-id");
+    var depName = cell.getAttribute("data-department-name") || "";
+
+    ctxTitle.innerHTML = "Historia • " + escapeHtml(depName);
+    ctxItems.innerHTML = "<div style='color:rgba(255,255,255,0.75);'>adowanie...</div>";
+    ctxMenu.style.display = "block";
+
+    // pozycja menu (eby nie wyjechao poza ekran)
+    var w = 300;
+    var h = 200;
+    var px = Math.min(x, window.innerWidth - w - 10);
+    var py = Math.min(y, window.innerHeight - h - 10);
+    ctxMenu.style.left = px + "px";
+    ctxMenu.style.top = py + "px";
+
+    // Pobierz histori
+    xhr("GET", "/web/positions/history/by_cell/" + topicId + "/" + depId, null, null, function(status, text){
+      if (!(status >= 200 && status < 300)) {
+        ctxItems.innerHTML = "<div style='color:rgba(255,255,255,0.75);'>Bd: " + status + "</div>";
+        return;
+      }
+
+      var items = [];
+      try { items = text ? JSON.parse(text) : []; } catch(e) { items = []; }
+
+      if (!items.length) {
+        ctxItems.innerHTML = "<div style='color:rgba(255,255,255,0.75);'>Brak historii.</div>";
+        return;
+      }
+
+      // Minimalnie: przywró pierwszy rekord (najnowszy) jako "restore"
+      var it = items[0];
+      var meta = "v" + it.new_version + " • " + formatDate(it.changed_at) + " • user_id=" + it.changed_by;
+
+      ctxItems.innerHTML =
+        "<div class='ctxItem' id='ctxRestore'>" +
+          "<div class='ctxMeta'>Przywró</div>" +
+          "<div class='ctxTxt'>" + escapeHtml(meta) + "</div>" +
+        "</div>";
+
+      var btn = document.getElementById("ctxRestore");
+      if (btn) {
+        btn.onclick = function(ev){
+          ev.stopPropagation();
+          restoreFromHistory(cell, it.id);
+          closeContextMenu();
+        };
+      }
+    });
+  }
+
+  function restoreFromHistory(cell, historyId) {
+    var topicId = cell.getAttribute("data-topic-id");
+    var departmentId = cell.getAttribute("data-department-id");
+    var clientVersion = cell.getAttribute("data-version") || "1";
+
+    var body = "topic_id=" + encodeURIComponent(topicId)
+      + "&department_id=" + encodeURIComponent(departmentId)
+      + "&history_id=" + encodeURIComponent(historyId)
+      + "&client_version=" + encodeURIComponent(clientVersion);
+
+    xhr("POST", "/web/positions/restore", body, "application/x-www-form-urlencoded", function(status, text){
+      if (status === 401) { alert("Zaloguj si."); return; }
+      if (status === 409) { alert("Konflikt wersji – odwie komórk."); return; }
+      if (!(status >= 200 && status < 300)) { alert("Bd: " + status); return; }
+
+      var p = JSON.parse(text);
+
+      var key = topicId + "_" + departmentId;
+      if (typeof tipCache !== "undefined") { delete tipCache[key]; }
+
+      cell.setAttribute("data-content", p.content || "");
+      cell.setAttribute("data-version", String(p.version));
+
+      var contentDiv = cell.getElementsByClassName("content")[0];
+      var metaDiv = cell.getElementsByClassName("vmeta")[0];
+
+      if (p.content && p.content.length) {
+        contentDiv.style.color = "#000";
+        contentDiv.innerHTML = escapeHtml(p.content);
+      } else {
+        contentDiv.style.color = "#999";
+        contentDiv.innerHTML = "-";
+      }
+      metaDiv.innerHTML = "v" + p.version;
+
+      if (typeof setCellMeta === "function") {
+        setCellMeta(cell, p.last_changed_at, p.last_changed_by);
+      }
+    });
+  }
+
+
+  function bindCells() {
+    var cells = document.getElementsByClassName("cell");
+    for (var i=0; i<cells.length; i++) {
+      (function(cell){
+        cell.onclick = function(){ openModal(cell); };
+
+        cell.oncontextmenu = function(e){
+          e.preventDefault();
+          if (typeof hideAllTips === 'function') { hideAllTips(); }
+          openContextMenu(cell, e.clientX, e.clientY);
+          return false;
+        };
+        cell.onmouseenter = function(){ loadHistory(cell); };
+        cell.onmouseleave = function(){ hideTip(cell); };
+      })(cells[i]);
+    }
+  }
+
+  // ✅ Opcjonalnie: wczytaj meta dla wszystkich komórek po starcie (bez klikania)
+  function initCellMeta() {
+    var cells = document.getElementsByClassName("cell");
+    for (var i=0; i<cells.length; i++) {
+      (function(cell){
+        var topicId = cell.getAttribute("data-topic-id");
+        var depId = cell.getAttribute("data-department-id");
+        xhr("GET", "/web/positions/by_cell/" + topicId + "/" + depId, null, null, function(status, text){
+          if (!(status >= 200 && status < 300)) return;
+          var p = null;
+          try { p = text ? JSON.parse(text) : null; } catch(e) { p = null; }
+          if (!p) return;
+          setCellMeta(cell, p.last_changed_at, p.last_changed_by);
+        });
+      })(cells[i]);
+    }
+  }
+
+  bindCells();
+  initCellMeta();
+})();
+
+
+
+
+
+
+
+
+  // --- Tooltip positioning (fix for last column) ---
+  function positionTip(cell) {
+    var tip = cell.getElementsByClassName("tip")[0];
+    if (!tip) return;
+
+    // reset
+    tip.style.left = "6px";
+    tip.style.right = "auto";
+
+    // musi by widoczny, eby policzy rect
+    tip.style.display = "block";
+
+    var rect = tip.getBoundingClientRect();
+    var pad = 10;
+
+    // jeli wypada w prawo -> przyklej do prawej krawdzi komórki
+    if (rect.right > window.innerWidth - pad) {
+      tip.style.left = "auto";
+      tip.style.right = "6px";
+    } else {
+      tip.style.left = "6px";
+      tip.style.right = "auto";
+    }
+
+    // jeli nadal wypada w lewo (bardzo wski ekran)
+    rect = tip.getBoundingClientRect();
+    if (rect.left < pad) {
+      tip.style.left = pad + "px";
+      tip.style.right = "auto";
+    }
+  }
+
+
+  // --- show/hide tooltip (calls positionTip) ---
+  function showTip(cell) {
+    var tip = cell.getElementsByClassName("tip")[0];
+    if (!tip) return;
+    tip.style.display = "block";
+    positionTip(cell);
+  }
+
+
+</script>
+
+
+<!-- Context Menu (prawy klik) -->
+<div id="ctxMenu" style="position:fixed; display:none; background:#111; color:#fff; border-radius:10px; padding:8px; z-index:9999; width:380px; box-shadow:0 10px 30px rgba(0,0,0,0.25);">
+  <div id="ctxTitle" style="font-weight:600; margin-bottom:6px;">Historia</div>
+  <div id="ctxItems"></div>
+</div>
+
+{% endblock %}

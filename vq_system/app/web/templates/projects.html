@@ -1,0 +1,30 @@
+﻿{% extends "base.html" %}
+{% set title = "Projekty" %}
+{% block content %}
+<div class="card">
+  <h3>Projekty</h3>
+
+  <form method="post" action="/projects/create" style="margin-bottom:12px;">
+    <div class="row">
+      <input name="name" placeholder="Nazwa projektu" style="min-width:320px;"/>
+      <button type="submit">Dodaj projekt</button>
+    </div>
+  </form>
+
+  {% if projects|length == 0 %}
+    <div class="muted">Brak projektów.</div>
+  {% else %}
+    <ul>
+    {% for p in projects %}
+      <li>
+        <b>#{{ p.id }}</b> {{ p.name }} <span class="muted">({{ p.status }})</span>
+        &nbsp;—&nbsp;
+        <a href="/topics/{{ p.id }}">Tematy</a>
+        &nbsp;|&nbsp;
+        <a href="/vq/{{ p.id }}">Macierz VQ</a>
+      </li>
+    {% endfor %}
+    </ul>
+  {% endif %}
+</div>
+{% endblock %}

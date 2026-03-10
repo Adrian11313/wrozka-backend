@@ -1,0 +1,29 @@
+﻿{% extends "base.html" %}
+{% set title = "Tematy" %}
+{% block content %}
+<div class="card">
+  <h3>Tematy (Projekt #{{ project_id }})</h3>
+
+  <form method="post" action="/topics/{{ project_id }}/create" style="margin-bottom:12px;">
+    <div class="row" style="flex-direction:column; align-items:stretch; max-width:600px;">
+      <input name="title" placeholder="Tytu tematu" />
+      <input name="description" placeholder="Opis (opcjonalnie)" />
+      <button type="submit">Dodaj temat</button>
+    </div>
+  </form>
+
+  {% if topics|length == 0 %}
+    <div class="muted">Brak tematów w tym projekcie.</div>
+  {% else %}
+    <ul>
+      {% for t in topics %}
+        <li><b>#{{ t.id }}</b> {{ t.title }} <span class="muted">({{ t.status }})</span></li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  <div style="margin-top:12px;">
+    <a href="/vq/{{ project_id }}">Przejd do macierzy VQ →</a>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,9 @@
+﻿fastapi
+uvicorn[standard]
+sqlalchemy
+python-dotenv
+jinja2
+python-multipart
+passlib
+python-jose[cryptography]
+pydantic

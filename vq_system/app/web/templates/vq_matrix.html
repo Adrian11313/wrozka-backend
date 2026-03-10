@@ -1,0 +1,1060 @@
+﻿{% extends "base.html" %}
+{% set title = "Macierz VQ" %}
+{% block content %}
+
+<h3>Macierz VQ (Projekt #{{ project_id }})</h3>
+
+<style>
+
+  /* META_UI_PATCH */
+  .cellbadges{margin:6px 0 6px 0;}
+  .statusBadge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;margin-right:6px;}
+  .badgeSmall{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;background:#eee;margin-right:6px;}
+  .photoMark{font-size:12px;margin-left:6px;opacity:0.85;}
+
+  /* delikatne ta jak prosie */
+  td.cell.status_OK{background:rgba(0,160,0,0.10);}
+  td.cell.status_RYZYKO{background:rgba(255,140,0,0.12);}
+  td.cell.status_BLOKADA{background:rgba(220,0,0,0.12);}
+  td.cell.status_DECYZJA{background:rgba(0,90,255,0.10);}
+
+  .status_OK .statusBadge{background:rgba(0,160,0,0.20);}
+  .status_RYZYKO .statusBadge{background:rgba(255,140,0,0.25);}
+  .status_BLOKADA .statusBadge{background:rgba(220,0,0,0.25);}
+  .status_DECYZJA .statusBadge{background:rgba(0,90,255,0.22);}
+
+  .modalRow{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0;}
+  .modalRow label{font-size:12px;color:#555;display:block;margin-bottom:4px;}
+  .modalRow .f{min-width:160px;}
+  .modalRow select,.modalRow input{padding:8px;border-radius:8px;border:1px solid #ccc;}
+  .attList a{display:block;margin:4px 0;font-size:12px;}
+
+  table { border-collapse: collapse; }
+  th, td { border: 1px solid #ddd; vertical-align: top; position: relative; }
+
+  /* ✅ Zawijanie + łamanie długich ciągów */
+  th, td {
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  td.cell { cursor: pointer; }
+  td.cell:hover { background: #f7f7f7; }
+
+  .cellmeta{
+    font-size: 11px;
+    color: #555;
+    margin-bottom: 6px;
+  }
+  .cellmeta .u{ font-weight: 600; }
+
+  .content{
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    max-height: 110px;
+    overflow: auto;
+  }
+
+  .vmeta { font-size: 10px; color: #777; margin-top: 6px; }
+
+  /* ===== Tooltip (hover history) ===== */
+  .tip {
+    display: none;
+    position: absolute;
+    top: 100%;
+    margin-top: 6px;
+    width: 520px;
+    max-width: 70vw;
+    background: #111;
+    color: #fff;
+    border-radius: 10px;
+    padding: 10px;
+    z-index: 120;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+    font-size: 12px;
+    max-height: 320px;
+    overflow: auto;
+  }
+
+  /* 2 kolumny (meta | treść) */
+  .tip .row {
+    display: grid;
+    grid-template-columns: 170px 1fr;
+    gap: 10px;
+    margin: 6px 0;
+    padding-bottom: 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.15);
+    align-items: start;
+  }
+  .tip .row:last-child { border-bottom: none; }
+
+  .tip .meta {
+    color: rgba(255,255,255,0.75);
+    font-size: 11px;
+    margin: 0;
+    line-height: 1.25;
+    white-space: normal;
+  }
+
+  .tip .txt {
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    line-height: 1.25;
+  }
+
+  .tip .empty { color: rgba(255,255,255,0.7); }
+
+  /* ===== Wrapper (żeby przewijanie poziome było na tabeli, nie na całej stronie) ===== */
+  .vqTableWrap{
+    max-width: 100%;
+    overflow: auto;
+  }
+
+  /* ===== Column resize grips (Excel-like) ===== */
+  .vqTable th, .vqTable td { position: relative; }
+  .vqTable .col-resizer{
+    position:absolute;
+    top:0;
+    right:-5px;
+    width:10px;
+    height:100%;
+    cursor: col-resize;
+    user-select:none;
+    z-index: 250; /* above tooltip trigger area */
+    background: transparent;
+  }
+  .vqTable .col-resizer:hover::before{
+    content:"";
+    position:absolute;
+    left:4px;
+    top:0;
+    bottom:0;
+    width:2px;
+    background: rgba(0,0,0,0.25);
+  }
+  body.resizing, body.resizing *{
+    cursor: col-resize !important;
+    user-select: none !important;
+  }
+
+  /* allow columns to grow */
+  th, td { max-width: none !important; }
+
+  /* ===== Row resize grips (Excel-like) ===== */
+  .row-resizer{
+    position:absolute;
+    left:0;
+    right:0;
+    bottom:-4px;
+    height:9px;
+    cursor: row-resize;
+    z-index: 240;
+    background: transparent;
+  }
+  .row-resizer:hover::before{
+    content:"";
+    position:absolute;
+    left:0;
+    right:0;
+    top:4px;
+    height:2px;
+    background: rgba(0,0,0,0.25);
+  }
+  body.rowresizing, body.rowresizing *{
+    cursor: row-resize !important;
+    user-select: none !important;
+  }
+
+  /* ===== Context menu (prawy klik) ===== */
+  #ctxMenu{
+    position: fixed;
+    display: none;
+    background: #111;
+    color: #fff;
+    border-radius: 10px;
+    padding: 8px;
+    z-index: 9999;
+    width: 520px;
+    max-width: min(90vw, 520px);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+  }
+  #ctxTitle{ font-weight: 600; margin-bottom: 6px; }
+  #ctxItems{
+    max-height: 360px;
+    overflow: auto;
+    padding-right: 2px;
+  }
+  .ctxItem{
+    padding: 8px;
+    border-radius: 10px;
+    cursor: pointer;
+    border: 1px solid rgba(255,255,255,0.08);
+    margin-bottom: 6px;
+  }
+  .ctxItem:hover{ background: rgba(255,255,255,0.10); }
+  .ctxMeta{
+    font-size: 11px;
+    color: rgba(255,255,255,0.75);
+    margin-bottom: 4px;
+  }
+  .ctxTxt{
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    line-height: 1.25;
+    max-height: 84px;
+    overflow: auto;
+    padding-right: 4px;
+  }
+</style>
+
+<div class="vqTableWrap">
+  <table cellpadding="8" style="table-layout: fixed; width: 100%;" class="vqTable" id="vqTable">
+    <tr>
+      <th style="min-width:260px;">Temat ↓ / Dzia →</th>
+      {% for d in departments %}
+        <th style="min-width:220px;">{{ d.name }}</th>
+      {% endfor %}
+    </tr>
+
+    {% for t in topics %}
+      <tr>
+        <td style="min-width:260px;"><b>{{ t.title }}</b></td>
+        {% for d in departments %}
+          {% set key = t.id ~ '_' ~ d.id %}
+          {% set p = pos_map.get(key) %}
+          <td class="cell"
+              data-topic-id="{{ t.id }}"
+              data-department-id="{{ d.id }}"
+              data-topic-title="{{ t.title|e }}"
+              data-department-name="{{ d.name|e }}"
+              data-content="{{ (p.content if p else '')|e }}"
+                          data-status="{{ (p.status if p else '')|e }}"
+            data-priority="{{ (p.priority if p else '')|e }}"
+            data-owner="{{ (p.owner if p else '')|e }}"
+            data-due-date="{{ (p.due_date if p else '')|e }}"
+            data-attachments-count="{{ (p.attachments_count if p else 0) }}"
+            data-version="{{ (p.version if p else 1) }}"
+          >
+            <div class="cellmeta"><span class="muted">—</span></div>
+
+            <div class="cellbadges"></div>
+{% if p and p.content %}
+              <div class="content">{{ p.content }}</div>
+            {% else %}
+              <div class="content" style="color:#999;">-</div>
+            {% endif %}
+
+            <div class="vmeta">v{{ (p.version if p else 1) }}</div>
+
+            <div class="tip"></div>
+          </td>
+        {% endfor %}
+      </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<!-- Modal (edycja) -->
+<div id="backdrop" style="position:fixed; inset:0; background:rgba(0,0,0,0.35); display:none; align-items:center; justify-content:center;">
+  <div style="background:#fff; width:720px; max-width:calc(100vw - 40px); border-radius:14px; padding:16px; box-shadow:0 10px 30px rgba(0,0,0,0.25);">
+    <h3 id="modalTitle" style="margin-top:0;"></h3>
+    <div id="modalSub" style="color:#666; margin-bottom:8px;"></div>
+    
+    <div class="modalRow">
+      <div class="f"><label>Status</label>
+        <select id="modalStatus">
+          <option value="">—</option>
+          <option value="OK">OK</option>
+          <option value="RYZYKO">RYZYKO</option>
+          <option value="BLOKADA">BLOKADA</option>
+          <option value="DECYZJA">DECYZJA</option>
+        </select>
+      </div>
+
+      <div class="f"><label>Priorytet</label>
+        <select id="modalPriority">
+          <option value="">—</option>
+          <option value="P1">P1</option>
+          <option value="P2">P2</option>
+          <option value="P3">P3</option>
+        </select>
+      </div>
+
+      <div class="f"><label>Owner</label>
+        <input id="modalOwner" type="text" placeholder="np. Janek"/>
+      </div>
+
+      <div class="f"><label>Termin</label>
+        <input id="modalDue" type="date"/>
+      </div>
+    </div>
+<textarea id="modalText" style="width:100%; min-height:200px;"></textarea>
+    <div class="modalRow">
+      <div class="f" style="min-width:320px;">
+        <label>Dodaj zdjcie</label>
+        <input id="modalPhoto" type="file" accept="image/*"/>
+        <div id="modalAtt" class="attList"></div>
+      </div>
+    </div>
+
+
+    <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:10px;">
+      <button id="btnCancel" type="button">Anuluj</button>
+      <button id="btnSave" type="button">Zapisz</button>
+    </div>
+    <div id="modalMsg" style="margin-top:10px;"></div>
+  </div>
+</div>
+
+<script type="text/javascript">
+(function(){
+  var backdrop = document.getElementById("backdrop");
+  var modalTitle = document.getElementById("modalTitle");
+  var modalSub = document.getElementById("modalSub");
+  var modalText = document.getElementById("modalText");
+  var modalStatus = document.getElementById("modalStatus");
+  var modalPriority = document.getElementById("modalPriority");
+  var modalOwner = document.getElementById("modalOwner");
+  var modalDue = document.getElementById("modalDue");
+  var modalPhoto = document.getElementById("modalPhoto");
+  var modalAtt = document.getElementById("modalAtt");
+
+  var modalMsg = document.getElementById("modalMsg");
+  var btnCancel = document.getElementById("btnCancel");
+  var btnSave = document.getElementById("btnSave");
+
+  var currentCell = null;
+
+  // states (żeby tooltip nie przeszkadzał w resize / ctxmenu)
+  var tipCache = {}; // key "topicId_departmentId" -> html
+  var ctxOpen = false;
+  var isResizingCol = false;
+  var isResizingRow = false;
+
+  function xhr(method, url, body, contentType, cb) {
+    var r = new XMLHttpRequest();
+    r.open(method, url, true);
+    if (contentType) r.setRequestHeader("Content-Type", contentType);
+    r.onreadystatechange = function() {
+      if (r.readyState !== 4) return;
+      cb(r.status, r.responseText);
+    };
+    r.send(body);
+  }
+
+  function formatDate(iso) {
+    if (!iso) return "-";
+    var s = String(iso);
+    s = s.replace("T"," ");
+    s = s.replace("Z","");
+    if (s.indexOf(".") !== -1) s = s.split(".")[0];
+    return s;
+  }
+
+  function escapeHtml(s) {
+    s = String(s);
+    return s
+      .replace(/&/g,"&amp;")
+      .replace(/</g,"&lt;")
+      .replace(/>/g,"&gt;")
+      .replace(/\"/g,"&quot;")
+      .replace(/\'/g,"&#39;");
+  }
+
+  function setCellMeta(cell, changedAt, changedBy) {
+    var el = cell.getElementsByClassName("cellmeta")[0];
+    if (!el) return;
+
+    var at = formatDate(changedAt);
+    var by = (changedBy === null || changedBy === undefined) ? "-" : String(changedBy);
+
+    if (!changedAt && (changedBy === null || changedBy === undefined)) {
+      el.innerHTML = "<span class='muted'>—</span>";
+      return;
+    }
+    el.innerHTML = at + " • <span class='u'>" + escapeHtml(by) + "</span>";
+  }
+
+
+  // META_UI_PATCH: dekorowanie komórki (kolor + badge)
+  function applyCellDecor(cell){
+    if (!cell) return;
+    var st = (cell.getAttribute("data-status") || "").trim();
+    cell.classList.remove("status_OK","status_RYZYKO","status_BLOKADA","status_DECYZJA");
+    if (st) cell.classList.add("status_" + st);
+
+    var badges = cell.getElementsByClassName("cellbadges")[0];
+    if (!badges) return;
+
+    var pr = (cell.getAttribute("data-priority") || "").trim();
+    var ow = (cell.getAttribute("data-owner") || "").trim();
+    var dd = (cell.getAttribute("data-due-date") || "").trim();
+    var ac = parseInt(cell.getAttribute("data-attachments-count") || "0", 10) || 0;
+
+    var html = "";
+    if (st) html += "<span class='statusBadge'>" + escapeHtml(st) + "</span>";
+    if (pr) html += "<span class='badgeSmall'>" + escapeHtml(pr) + "</span>";
+    if (ow) html += "<span class='badgeSmall'>" + escapeHtml(ow) + "</span>";
+    if (dd) html += "<span class='badgeSmall'>" + escapeHtml(dd) + "</span>";
+    if (ac > 0) html += "<span class='photoMark'>📷" + ac + "</span>";
+
+    badges.innerHTML = html;
+  }
+
+  // META_UI_PATCH: lista zdj w modalu
+  function loadAttachmentsToModal(topicId, depId){
+    if (!modalAtt) return;
+    modalAtt.innerHTML = "";
+    xhr("GET", "/web/positions/attachments/by_cell/" + topicId + "/" + depId, null, null, function(status, text){
+      if (!(status >= 200 && status < 300)) return;
+      var items = [];
+      try { items = text ? JSON.parse(text) : []; } catch(e) { items = []; }
+
+      if (!items.length){
+        modalAtt.innerHTML = "<div style='font-size:12px;color:#777;'>Brak zdj</div>";
+        return;
+      }
+
+      var html = "";
+      for (var i=0; i<items.length; i++){
+        var it = items[i];
+        var nm = it.original_name || ("zdjecie_" + it.id);
+        html += "<a href='" + escapeHtml(it.url) + "' target='_blank'>📷 " + escapeHtml(nm) + "</a>";
+      }
+      modalAtt.innerHTML = html;
+    });
+  }
+
+  // META_UI_PATCH: upload zdjcia po zapisie
+  function uploadPhoto(topicId, depId, cb){
+    if (!modalPhoto || !modalPhoto.files || !modalPhoto.files.length){
+      if (cb) cb();
+      return;
+    }
+
+    var fd = new FormData();
+    fd.append("topic_id", topicId);
+    fd.append("department_id", depId);
+    fd.append("file", modalPhoto.files[0]);
+
+    var r = new XMLHttpRequest();
+    r.open("POST", "/web/positions/attachments/upload", true);
+    r.onreadystatechange = function(){
+      if (r.readyState !== 4) return;
+
+      try {
+        if (r.status >= 200 && r.status < 300){
+          var resp = JSON.parse(r.responseText || "{}");
+          if (currentCell && resp.attachments_count !== undefined){
+            currentCell.setAttribute("data-attachments-count", String(resp.attachments_count));
+          }
+          modalPhoto.value = "";
+        }
+      } catch(e) {}
+
+      if (cb) cb();
+    };
+    r.send(fd);
+  }
+
+  // -------- EDIT MODAL ----------
+  function openModal(cell) {
+    // jeśli użytkownik trafił w grip (resize) albo menu kontekstowe jest otwarte
+    if (isResizingCol || isResizingRow || ctxOpen) return;
+
+    currentCell = cell;
+    modalMsg.style.color = "#666";
+    modalMsg.innerHTML = "";
+
+    var topicId = cell.getAttribute("data-topic-id");
+    var depId = cell.getAttribute("data-department-id");
+
+    modalTitle.innerHTML = cell.getAttribute("data-topic-title");
+    modalSub.innerHTML = "Dzia: " + cell.getAttribute("data-department-name");
+
+    xhr("GET", "/web/positions/by_cell/" + topicId + "/" + depId, null, null, function(status, text){
+      if (status === 401) {
+        modalMsg.style.color = "#b00020";
+        modalMsg.innerHTML = "Zaloguj się.";
+        backdrop.style.display = "flex";
+        return;
+      }
+      if (status >= 200 && status < 300) {
+        var p = null;
+        try { p = text ? JSON.parse(text) : null; } catch(e) { p = null; }
+
+        if (p) {
+          cell.setAttribute("data-content", p.content || "");
+          cell.setAttribute("data-version", String(p.version));
+          setCellMeta(cell, p.last_changed_at, p.last_changed_by);
+        } else {
+          cell.setAttribute("data-content", "");
+          cell.setAttribute("data-version", "1");
+          setCellMeta(cell, null, null);
+        }
+
+        modalText.value = cell.getAttribute("data-content") || "";
+        if (modalStatus) modalStatus.value = (p && p.status) ? p.status : "";
+        if (modalPriority) modalPriority.value = (p && p.priority) ? p.priority : "";
+        if (modalOwner) modalOwner.value = (p && p.owner) ? p.owner : "";
+        if (modalDue) modalDue.value = (p && p.due_date) ? p.due_date : "";
+        loadAttachmentsToModal(topicId, depId);
+
+        backdrop.style.display = "flex";
+        return;
+      }
+      modalMsg.style.color = "#b00020";
+      modalMsg.innerHTML = "Błąd: " + status + " " + text;
+      backdrop.style.display = "flex";
+    });
+  }
+
+  function closeModal() {
+    backdrop.style.display = "none";
+    currentCell = null;
+  }
+
+  btnCancel.onclick = closeModal;
+
+  btnSave.onclick = function(){
+    if (!currentCell) return;
+
+    modalMsg.style.color = "#666";
+    modalMsg.innerHTML = "";
+
+    var topicId = currentCell.getAttribute("data-topic-id");
+    var departmentId = currentCell.getAttribute("data-department-id");
+    var clientVersion = currentCell.getAttribute("data-version") || "1";
+    var content = modalText.value || "";
+
+    var body = "topic_id=" + encodeURIComponent(topicId)
+      + "&department_id=" + encodeURIComponent(departmentId)
+      + "&content=" + encodeURIComponent(content)
+      + "&client_version=" + encodeURIComponent(clientVersion)
+      + "&status=" + encodeURIComponent((modalStatus && modalStatus.value) ? modalStatus.value : "")
+      + "&priority=" + encodeURIComponent((modalPriority && modalPriority.value) ? modalPriority.value : "")
+      + "&owner=" + encodeURIComponent((modalOwner && modalOwner.value) ? modalOwner.value : "")
+      + "&due_date=" + encodeURIComponent((modalDue && modalDue.value) ? modalDue.value : "");
+
+    xhr("POST", "/web/positions/upsert", body, "application/x-www-form-urlencoded", function(status, text){
+      if (status === 401) {
+        modalMsg.style.color = "#b00020";
+        modalMsg.innerHTML = "Zaloguj się.";
+        return;
+      }
+      if (status === 409) {
+        modalMsg.style.color = "#b00020";
+        modalMsg.innerHTML = "Konflikt wersji: ktoś zmienił wpis. Otwórz komórkę ponownie i zapisz.";
+        return;
+      }
+      if (!(status >= 200 && status < 300)) {
+        modalMsg.style.color = "#b00020";
+        modalMsg.innerHTML = "Błąd: " + status + " " + text;
+        return;
+      }
+
+      var p = JSON.parse(text);
+
+      var key = topicId + "_" + departmentId;
+      delete tipCache[key];
+
+      currentCell.setAttribute("data-content", p.content || "");
+      currentCell.setAttribute("data-status", p.status || "");
+      currentCell.setAttribute("data-priority", p.priority || "");
+      currentCell.setAttribute("data-owner", p.owner || "");
+      currentCell.setAttribute("data-due-date", p.due_date || "");
+      if (p.attachments_count !== undefined) currentCell.setAttribute("data-attachments-count", String(p.attachments_count));
+
+      currentCell.setAttribute("data-version", String(p.version));
+
+      var contentDiv = currentCell.getElementsByClassName("content")[0];
+      var metaDiv = currentCell.getElementsByClassName("vmeta")[0];
+
+      if (p.content && p.content.length) {
+        contentDiv.style.color = "#000";
+        contentDiv.innerHTML = escapeHtml(p.content);
+      } else {
+        contentDiv.style.color = "#999";
+        contentDiv.innerHTML = "-";
+      }
+
+      metaDiv.innerHTML = "v" + p.version;
+      applyCellDecor(currentCell);
+      uploadPhoto(topicId, departmentId, function(){
+        applyCellDecor(currentCell);
+        loadAttachmentsToModal(topicId, departmentId);
+      });
+      setCellMeta(currentCell, p.last_changed_at, p.last_changed_by);
+
+      modalMsg.style.color = "green";
+      modalMsg.innerHTML = "Zapisano.";
+      setTimeout(closeModal, 250);
+    });
+  };
+
+  backdrop.onclick = function(e){
+    if (e.target === backdrop) closeModal();
+  };
+
+  // -------- TOOLTIP (HOVER HISTORY) ----------
+  function buildTipHtml(items) {
+    if (!items || !items.length) {
+      return "<div class='empty'>Brak historii (pierwszy wpis).</div>";
+    }
+    var html = "";
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      var meta = "v" + it.new_version
+        + " • " + formatDate(it.changed_at)
+        + " • user_id=" + it.changed_by;
+      var content = (it.new_content && it.new_content.length) ? it.new_content : "(pusto)";
+      html += "<div class='row'>"
+        + "<div class='meta'>" + escapeHtml(meta) + "</div>"
+        + "<div class='txt'>" + escapeHtml(content) + "</div>"
+        + "</div>";
+    }
+    return html;
+  }
+
+  function positionTip(cell) {
+    var tip = cell.getElementsByClassName("tip")[0];
+    if (!tip) return;
+
+    // reset
+    tip.style.left = "6px";
+    tip.style.right = "auto";
+
+    // musi być widoczny, żeby policzyć rect
+    tip.style.display = "block";
+
+    var rect = tip.getBoundingClientRect();
+    var pad = 10;
+
+    // jeśli wypada w prawo -> przyklej do prawej
+    if (rect.right > window.innerWidth - pad) {
+      tip.style.left = "auto";
+      tip.style.right = "6px";
+    } else {
+      tip.style.left = "6px";
+      tip.style.right = "auto";
+    }
+
+    rect = tip.getBoundingClientRect();
+    if (rect.left < pad) {
+      tip.style.left = pad + "px";
+      tip.style.right = "auto";
+    }
+  }
+
+  function showTip(cell) {
+    var tip = cell.getElementsByClassName("tip")[0];
+    if (!tip) return;
+    tip.style.display = "block";
+    positionTip(cell);
+  }
+
+  function hideTip(cell) {
+    var tip = cell.getElementsByClassName("tip")[0];
+    if (!tip) return;
+    tip.style.display = "none";
+  }
+
+  function hideAllTips() {
+    var tips = document.getElementsByClassName('tip');
+    for (var i=0; i<tips.length; i++) tips[i].style.display = 'none';
+  }
+
+  function loadHistory(cell) {
+    if (ctxOpen || isResizingCol || isResizingRow) return;
+
+    var topicId = cell.getAttribute("data-topic-id");
+    var depId = cell.getAttribute("data-department-id");
+    var key = topicId + "_" + depId;
+
+    var tip = cell.getElementsByClassName("tip")[0];
+    if (!tip) return;
+
+    if (tipCache[key]) {
+      tip.innerHTML = tipCache[key];
+      showTip(cell);
+      return;
+    }
+
+    tip.innerHTML = "<div class='empty'>Ładowanie historii...</div>";
+    showTip(cell);
+
+    xhr("GET", "/web/positions/history/by_cell/" + topicId + "/" + depId, null, null, function(status, text){
+      if (status === 401) {
+        tip.innerHTML = "<div class='empty'>Zaloguj się.</div>";
+        return;
+      }
+      if (!(status >= 200 && status < 300)) {
+        tip.innerHTML = "<div class='empty'>Błąd: " + status + "</div>";
+        return;
+      }
+
+      var items = [];
+      try { items = text ? JSON.parse(text) : []; } catch(e) { items = []; }
+
+      var html = buildTipHtml(items);
+      tipCache[key] = html;
+      tip.innerHTML = html;
+    });
+  }
+
+  // -------- CONTEXT MENU (RIGHT CLICK) ----------
+  var ctxMenu = document.getElementById("ctxMenu");
+  var ctxTitle = document.getElementById("ctxTitle");
+  var ctxItems = document.getElementById("ctxItems");
+
+  function closeContextMenu() {
+    ctxOpen = false;
+    if (!ctxMenu) return;
+    ctxMenu.style.display = "none";
+    if (ctxItems) ctxItems.innerHTML = "";
+  }
+
+  // zamykamy menu po kliknięciu gdziekolwiek
+  document.addEventListener("mousedown", function(e){
+    // nie zamykaj na prawy klik (żeby nie migało)
+    if (e.button === 2) return;
+    closeContextMenu();
+  });
+  document.addEventListener("scroll", function(){ closeContextMenu(); }, true);
+  window.addEventListener("resize", function(){ closeContextMenu(); });
+
+  function openContextMenu(cell, x, y) {
+    if (!ctxMenu || !ctxTitle || !ctxItems) return;
+
+    // ukryj tooltipy
+    hideAllTips();
+
+    ctxOpen = true;
+
+    var topicId = cell.getAttribute("data-topic-id");
+    var depId = cell.getAttribute("data-department-id");
+    var depName = cell.getAttribute("data-department-name") || "";
+
+    ctxTitle.innerHTML = "Historia • " + escapeHtml(depName);
+    ctxItems.innerHTML = "<div style='color:rgba(255,255,255,0.75);'>Ładowanie...</div>";
+    ctxMenu.style.display = "block";
+
+    // pozycja menu (żeby nie wyjechało poza ekran)
+    var w = ctxMenu.getBoundingClientRect().width || 520;
+    var h = 420;
+    var px = Math.min(x + 6, window.innerWidth - w - 10);
+    var py = Math.min(y + 6, window.innerHeight - h - 10);
+    if (px < 10) px = 10;
+    if (py < 10) py = 10;
+    ctxMenu.style.left = px + "px";
+    ctxMenu.style.top = py + "px";
+
+    xhr("GET", "/web/positions/history/by_cell/" + topicId + "/" + depId, null, null, function(status, text){
+      if (status === 401) {
+        ctxItems.innerHTML = "<div style='color:rgba(255,255,255,0.75);'>Zaloguj się.</div>";
+        return;
+      }
+      if (!(status >= 200 && status < 300)) {
+        ctxItems.innerHTML = "<div style='color:rgba(255,255,255,0.75);'>Błąd: " + status + "</div>";
+        return;
+      }
+
+      // zabezpieczenie gdy serwer zwróci HTML
+      if (!text || String(text).trim().startsWith("<")) {
+        ctxItems.innerHTML = "<div style='color:rgba(255,255,255,0.75);'>Niepoprawna odpowiedź serwera.</div>";
+        return;
+      }
+
+      var items = [];
+      try { items = text ? JSON.parse(text) : []; } catch(e) { items = []; }
+
+      if (!items.length) {
+        ctxItems.innerHTML = "<div style='color:rgba(255,255,255,0.75);'>Brak historii.</div>";
+        return;
+      }
+
+      var html = "";
+      for (var i=0; i<items.length && i<20; i++) {
+        var it = items[i];
+        var meta = "v" + it.new_version + " • " + formatDate(it.changed_at) + " • user_id=" + it.changed_by;
+        var txt = (it.new_content && it.new_content.length) ? it.new_content : "(pusto)";
+        html += "<div class='ctxItem' data-hid='" + it.id + "'>"
+          + "<div class='ctxMeta'>Przywróć: " + escapeHtml(meta) + "</div>"
+          + "<div class='ctxTxt'>" + escapeHtml(txt) + "</div>"
+          + "</div>";
+      }
+      ctxItems.innerHTML = html;
+
+      var els = ctxItems.getElementsByClassName("ctxItem");
+      for (var j=0; j<els.length; j++) {
+        (function(el){
+          el.onclick = function(ev){
+            ev.stopPropagation();
+            var hid = el.getAttribute("data-hid");
+            restoreFromHistory(cell, hid);
+            closeContextMenu();
+          };
+        })(els[j]);
+      }
+    });
+  }
+
+  function restoreFromHistory(cell, historyId) {
+    var topicId = cell.getAttribute("data-topic-id");
+    var departmentId = cell.getAttribute("data-department-id");
+    var clientVersion = cell.getAttribute("data-version") || "1";
+
+    var body = "topic_id=" + encodeURIComponent(topicId)
+      + "&department_id=" + encodeURIComponent(departmentId)
+      + "&history_id=" + encodeURIComponent(historyId)
+      + "&client_version=" + encodeURIComponent(clientVersion);
+
+    xhr("POST", "/web/positions/restore", body, "application/x-www-form-urlencoded", function(status, text){
+      if (status === 401) { alert("Zaloguj się."); return; }
+      if (status === 409) { alert("Konflikt wersji – odśwież komórkę."); return; }
+      if (!(status >= 200 && status < 300)) { alert("Błąd: " + status); return; }
+
+      var p = JSON.parse(text);
+
+      var key = topicId + "_" + departmentId;
+      delete tipCache[key];
+
+      cell.setAttribute("data-content", p.content || "");
+      cell.setAttribute("data-version", String(p.version));
+
+      var contentDiv = cell.getElementsByClassName("content")[0];
+      var metaDiv = cell.getElementsByClassName("vmeta")[0];
+
+      if (p.content && p.content.length) {
+        contentDiv.style.color = "#000";
+        contentDiv.innerHTML = escapeHtml(p.content);
+      } else {
+        contentDiv.style.color = "#999";
+        contentDiv.innerHTML = "-";
+      }
+      metaDiv.innerHTML = "v" + p.version;
+
+      setCellMeta(cell, p.last_changed_at, p.last_changed_by);
+    });
+  }
+
+  // -------- BIND CELLS ----------
+  function bindCells() {
+    var cells = document.getElementsByClassName("cell");
+    for (var i=0; i<cells.length; i++) {
+      (function(cell){
+        cell.onclick = function(e){
+          // jeśli klik był w grip
+          if (e && (e.target.classList.contains("col-resizer") || e.target.classList.contains("row-resizer"))) return;
+          openModal(cell);
+        };
+
+        cell.oncontextmenu = function(e){
+          // jeśli prawy klik na grip: nie pokazuj menu
+          if (e && (e.target.classList.contains("col-resizer") || e.target.classList.contains("row-resizer"))) return;
+          e.preventDefault();
+          openContextMenu(cell, e.clientX, e.clientY);
+          return false;
+        };
+
+        cell.onmouseenter = function(e){
+          // jeśli wchodzimy na grip, nie pokazuj tooltipu
+          if (e && (e.target.classList.contains("col-resizer") || e.target.classList.contains("row-resizer"))) return;
+          loadHistory(cell);
+        };
+        cell.onmouseleave = function(){ hideTip(cell); };
+      })(cells[i]);
+    }
+  }
+
+  function initCellMeta() {
+    var cells = document.getElementsByClassName("cell");
+    for (var i=0; i<cells.length; i++) {
+      (function(cell){
+        var topicId = cell.getAttribute("data-topic-id");
+        var depId = cell.getAttribute("data-department-id");
+        xhr("GET", "/web/positions/by_cell/" + topicId + "/" + depId, null, null, function(status, text){
+          if (!(status >= 200 && status < 300)) return;
+          var p = null;
+          try { p = text ? JSON.parse(text) : null; } catch(e) { p = null; }
+          if (!p) return;
+          setCellMeta(cell, p.last_changed_at, p.last_changed_by);
+        });
+      })(cells[i]);
+    }
+  }
+
+  // ===== Column resize (works from ANY row) =====
+  function enableColumnResize() {
+    var table = document.getElementById("vqTable");
+    if (!table) return;
+
+    var rows = table.getElementsByTagName("tr");
+    if (!rows || !rows.length) return;
+
+    // add grips to every cell except the last column
+    for (var r = 0; r < rows.length; r++) {
+      var cells = rows[r].children;
+      if (!cells || cells.length < 2) continue;
+
+      for (var c = 0; c < cells.length - 1; c++) {
+        (function(cell, colIndex){
+          if (cell.getElementsByClassName("col-resizer")[0]) return;
+
+          var grip = document.createElement("div");
+          grip.className = "col-resizer";
+          cell.appendChild(grip);
+
+          grip.addEventListener("mousedown", function(e){
+            e.preventDefault();
+            e.stopPropagation();
+
+            isResizingCol = true;
+            hideAllTips();
+            closeContextMenu();
+            document.body.classList.add("resizing");
+
+            var startX = e.clientX;
+            var startW = cell.getBoundingClientRect().width;
+
+            function setColWidth(px) {
+              for (var rr = 0; rr < rows.length; rr++) {
+                var rcells = rows[rr].children;
+                if (!rcells || rcells.length <= colIndex) continue;
+                rcells[colIndex].style.width = px + "px";
+              }
+            }
+
+            setColWidth(Math.max(80, Math.round(startW)));
+
+            function onMove(ev){
+              var dx = ev.clientX - startX;
+              var w = Math.max(80, Math.round(startW + dx));
+              setColWidth(w);
+              ev.preventDefault();
+            }
+
+            function onUp(){
+              document.removeEventListener("mousemove", onMove);
+              document.removeEventListener("mouseup", onUp);
+              document.body.classList.remove("resizing");
+              isResizingCol = false;
+            }
+
+            document.addEventListener("mousemove", onMove);
+            document.addEventListener("mouseup", onUp);
+          });
+        })(cells[c], c);
+      }
+    }
+  }
+
+  // ===== Row resize (Excel-like) =====
+  function enableRowResize() {
+    var table = document.getElementById("vqTable");
+    if (!table) return;
+
+    var rows = table.getElementsByTagName("tr");
+    if (!rows || rows.length < 2) return; // first is header
+
+    // add grips to each cell in each data row
+    for (var r = 1; r < rows.length; r++) {
+      var cells = rows[r].children;
+      if (!cells || !cells.length) continue;
+
+      for (var c = 0; c < cells.length; c++) {
+        if (cells[c].getElementsByClassName("row-resizer")[0]) continue;
+        var h = document.createElement("div");
+        h.className = "row-resizer";
+        cells[c].appendChild(h);
+      }
+    }
+
+    var activeRow = null;
+    var startY = 0;
+    var startH = 0;
+
+    function applyRowHeight(tr, hPx) {
+      for (var i = 0; i < tr.cells.length; i++) {
+        tr.cells[i].style.height = hPx + "px";
+
+        var c = tr.cells[i].getElementsByClassName("content")[0];
+        if (c) {
+          var inner = hPx - 55;
+          if (inner < 30) inner = 30;
+          c.style.maxHeight = inner + "px";
+        }
+      }
+    }
+
+    function onMove(e) {
+      if (!activeRow) return;
+      var dy = e.clientY - startY;
+      var newH = startH + dy;
+
+      if (newH < 60) newH = 60;
+      if (newH > 900) newH = 900;
+
+      applyRowHeight(activeRow, newH);
+      e.preventDefault();
+    }
+
+    function onUp() {
+      activeRow = null;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.classList.remove("rowresizing");
+      isResizingRow = false;
+    }
+
+    // event delegation
+    table.addEventListener("mousedown", function(e){
+      if (!e.target || !e.target.classList || !e.target.classList.contains("row-resizer")) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+
+      isResizingRow = true;
+      hideAllTips();
+      closeContextMenu();
+      document.body.classList.add("rowresizing");
+
+      var td = e.target.closest("td");
+      if (!td) return;
+      var tr = td.parentElement;
+      if (!tr) return;
+
+      activeRow = tr;
+      startY = e.clientY;
+      startH = tr.cells[0].getBoundingClientRect().height;
+
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    }, true);
+  }
+
+  // META_UI_PATCH_INIT: ustaw kolory + badge na starcie
+  (function(){
+    var cells = document.getElementsByClassName('cell');
+    for (var i=0; i<cells.length; i++) applyCellDecor(cells[i]);
+  })();
+  bindCells();
+  initCellMeta();
+  enableColumnResize();
+  enableRowResize();
+})();
+</script>
+
+<!-- Context Menu (prawy klik) -->
+<div id="ctxMenu">
+  <div id="ctxTitle">Historia</div>
+  <div id="ctxItems"></div>
+</div>
+
+{% endblock %}
+

@@ -1,0 +1,24 @@
+﻿{% extends "base.html" %}
+{% set title = "Dziay" %}
+{% block content %}
+<div class="card">
+  <h3>Dziay</h3>
+
+  <form method="post" action="/departments/create" style="margin-bottom:12px;">
+    <div class="row">
+      <input name="name" placeholder="Nazwa dziau (np. Konstrukcja)" style="min-width:320px;"/>
+      <button type="submit">Dodaj dzia</button>
+    </div>
+  </form>
+
+  {% if departments|length == 0 %}
+    <div class="muted">Brak dziaów.</div>
+  {% else %}
+    <ul>
+      {% for d in departments %}
+        <li><b>#{{ d.id }}</b> {{ d.name }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</div>
+{% endblock %}
