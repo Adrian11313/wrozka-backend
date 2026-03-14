@@ -43,8 +43,6 @@ TPAY_WEBHOOK_URL = os.getenv("TPAY_WEBHOOK_URL", "").strip()
 ADMIN_LOGIN = os.getenv("ADMIN_LOGIN", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 
-init_db()
-
 
 def is_admin_logged_in() -> bool:
     return bool(session.get("admin_logged_in"))
@@ -486,4 +484,5 @@ def create_payment():
 
 
 if __name__ == "__main__":
+    init_db()
     app.run(host="127.0.0.1", port=5000, debug=True)
