@@ -83,6 +83,7 @@ def get_tpay_token():
     print("=== TPAY OAUTH DEBUG ===")
     print("TPAY_API_BASE:", TPAY_API_BASE)
     print("TPAY_CLIENT_ID:", TPAY_CLIENT_ID)
+    print("TPAY_CLIENT_ID length:", len(TPAY_CLIENT_ID) if TPAY_CLIENT_ID else 0)
     print("TPAY_CLIENT_SECRET length:", len(TPAY_CLIENT_SECRET) if TPAY_CLIENT_SECRET else 0)
     print("TPAY_CLIENT_SECRET suffix:", TPAY_CLIENT_SECRET[-6:] if TPAY_CLIENT_SECRET else None)
     print("OAuth URL:", oauth_url)
@@ -120,12 +121,6 @@ def get_tpay_transaction_details(transaction_id: str) -> dict:
         },
         timeout=30,
     )
-
-    print("=== TPAY TRANSACTION DETAILS DEBUG ===")
-    print("Transaction ID:", transaction_id)
-    print("Details URL:", f"{TPAY_API_BASE}/transactions/{transaction_id}")
-    print("Details response status:", response.status_code)
-    print("Details response text:", response.text)
 
     response.raise_for_status()
     return response.json()
@@ -369,14 +364,6 @@ def create_payment():
         question = (data.get("question") or "").strip()
         package_name = (data.get("package_name") or "Nieznany pakiet").strip()
 
-        print("=== CREATE PAYMENT INPUT ===")
-        print("name:", name)
-        print("email:", email)
-        print("amount:", amount)
-        print("description:", description)
-        print("question:", question)
-        print("package_name:", package_name)
-
         if not name:
             return jsonify({"error": "Brak imienia"}), 400
 
@@ -396,8 +383,6 @@ def create_payment():
             question=question,
             amount=str(amount),
         )
-
-        print("Created local order_id:", order_id)
 
         token = get_tpay_token()
 
@@ -424,7 +409,6 @@ def create_payment():
         }
 
         print("=== TPAY WEBHOOK URL ===", TPAY_WEBHOOK_URL)
-        print("=== TPAY CALLBACKS ===", callbacks)
         print("=== TPAY PAYLOAD ===", payload)
 
         response = requests.post(
@@ -436,9 +420,6 @@ def create_payment():
             },
             timeout=30,
         )
-
-        print("=== TPAY CREATE STATUS ===", response.status_code)
-        print("=== TPAY CREATE TEXT ===", response.text)
 
         if response.status_code >= 400:
             return jsonify(
@@ -476,14 +457,11 @@ def create_payment():
         )
 
     except requests.exceptions.RequestException as e:
-        print("=== REQUEST EXCEPTION ===", str(e))
         return jsonify({"error": "Błąd połączenia z Tpay", "details": str(e)}), 500
     except Exception as e:
-        print("=== SERVER EXCEPTION ===", str(e))
         return jsonify({"error": "Błąd serwera", "details": str(e)}), 500
 
 
 if __name__ == "__main__":
     init_db()
     app.run(host="127.0.0.1", port=5000, debug=True)
-
