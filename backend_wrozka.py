@@ -83,8 +83,8 @@ def get_tpay_token():
     print("=== TPAY OAUTH DEBUG ===")
     print("TPAY_API_BASE:", TPAY_API_BASE)
     print("TPAY_CLIENT_ID:", TPAY_CLIENT_ID)
-    print("TPAY_CLIENT_SECRET exists:", bool(TPAY_CLIENT_SECRET))
     print("TPAY_CLIENT_SECRET length:", len(TPAY_CLIENT_SECRET) if TPAY_CLIENT_SECRET else 0)
+    print("TPAY_CLIENT_SECRET suffix:", TPAY_CLIENT_SECRET[-6:] if TPAY_CLIENT_SECRET else None)
     print("OAuth URL:", oauth_url)
     print("OAuth payload keys:", list(payload.keys()))
 
@@ -486,3 +486,4 @@ def create_payment():
 if __name__ == "__main__":
     init_db()
     app.run(host="127.0.0.1", port=5000, debug=True)
+
