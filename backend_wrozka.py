@@ -131,6 +131,17 @@ def health():
     return jsonify({"ok": True, "message": "Backend działa"})
 
 
+@app.route("/api/debug-tpay-env", methods=["GET"])
+def debug_tpay_env():
+    return jsonify({
+        "client_id": TPAY_CLIENT_ID,
+        "client_id_length": len(TPAY_CLIENT_ID) if TPAY_CLIENT_ID else 0,
+        "secret_length": len(TPAY_CLIENT_SECRET) if TPAY_CLIENT_SECRET else 0,
+        "secret_suffix": TPAY_CLIENT_SECRET[-6:] if TPAY_CLIENT_SECRET else None,
+        "api_base": TPAY_API_BASE,
+    })
+
+
 @app.route("/api/admin/login", methods=["POST"])
 def admin_login():
     try:
@@ -465,3 +476,4 @@ def create_payment():
 if __name__ == "__main__":
     init_db()
     app.run(host="127.0.0.1", port=5000, debug=True)
+
