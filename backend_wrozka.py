@@ -21,27 +21,52 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "151884455555556411887641796")
 
-app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_SECURE"] = False
-
-CORS(
-    app,
-    supports_credentials=True,
-    origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
-)
-
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").strip()
 TPAY_CLIENT_ID = os.getenv("TPAY_CLIENT_ID")
 TPAY_CLIENT_SECRET = os.getenv("TPAY_CLIENT_SECRET")
 TPAY_API_BASE = os.getenv("TPAY_API_BASE", "https://openapi.sandbox.tpay.com")
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 TPAY_WEBHOOK_URL = os.getenv("TPAY_WEBHOOK_URL", "").strip()
 
 ADMIN_LOGIN = os.getenv("ADMIN_LOGIN", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "None"
+app.config["SESSION_COOKIE_SECURE"] = True
+
+allowed_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+if FRONTEND_URL and FRONTEND_URL not in allowed_origins:
+    allowed_origins.append(FRONTEND_URL)
+
+CORS(
+    app,
+    resources={
+        r"/api/*": {
+            "origins": allowed_origins,
+            "supports_credentials": True,
+            "allow_headers": ["Content-Type", "Authorization"],
+            "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        }
+    },
+)
+
+
+@app.after_request
+def add_cors_headers(response):
+    origin = request.headers.get("Origin")
+
+    if origin in allowed_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+        response.headers["Vary"] = "Origin"
+
+    return response
 
 
 def is_admin_logged_in() -> bool:
@@ -139,7 +164,14 @@ def debug_tpay_env():
         "secret_length": len(TPAY_CLIENT_SECRET) if TPAY_CLIENT_SECRET else 0,
         "secret_suffix": TPAY_CLIENT_SECRET[-6:] if TPAY_CLIENT_SECRET else None,
         "api_base": TPAY_API_BASE,
+        "frontend_url": FRONTEND_URL,
+        "allowed_origins": allowed_origins,
     })
+
+
+@app.route("/api/admin/login", methods=["OPTIONS"])
+def admin_login_options():
+    return "", 200
 
 
 @app.route("/api/admin/login", methods=["POST"])
@@ -153,6 +185,8 @@ def admin_login():
             return jsonify({"error": "Nieprawidłowy login lub hasło"}), 401
 
         session["admin_logged_in"] = True
+        session.modified = True
+
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"error": "Błąd logowania", "details": str(e)}), 500
@@ -161,6 +195,7 @@ def admin_login():
 @app.route("/api/admin/logout", methods=["POST"])
 def admin_logout():
     session.pop("admin_logged_in", None)
+    session.modified = True
     return jsonify({"ok": True})
 
 
@@ -476,4 +511,3 @@ def create_payment():
 if __name__ == "__main__":
     init_db()
     app.run(host="127.0.0.1", port=5000, debug=True)
-
