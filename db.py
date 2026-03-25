@@ -22,6 +22,7 @@ def init_db() -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             created_at TEXT NOT NULL,
             updated_at TEXT,
+            paid_at TEXT,
             customer_name TEXT NOT NULL,
             customer_email TEXT NOT NULL,
             package_name TEXT NOT NULL,
@@ -36,6 +37,11 @@ def init_db() -> None:
         )
         """
     )
+
+    try:
+        cursor.execute("ALTER TABLE orders ADD COLUMN paid_at TEXT")
+    except Exception:
+        pass
 
     conn.commit()
     conn.close()
@@ -58,6 +64,7 @@ def create_order(
         INSERT INTO orders (
             created_at,
             updated_at,
+            paid_at,
             customer_name,
             customer_email,
             package_name,
@@ -66,11 +73,12 @@ def create_order(
             payment_status,
             order_status
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             now,
             now,
+            None,
             customer_name,
             customer_email,
             package_name,
@@ -155,6 +163,7 @@ def get_order_by_id(order_id: int) -> sqlite3.Row | None:
     conn.close()
     return row
 
+
 def get_order_by_transaction_id(tpay_transaction_id: str) -> sqlite3.Row | None:
     conn = get_connection()
     cursor = conn.cursor()
@@ -184,25 +193,46 @@ def update_payment_status_by_transaction_id(
 
     now = datetime.utcnow().isoformat()
 
-    cursor.execute(
-        """
-        UPDATE orders
-        SET
-            updated_at = ?,
-            payment_status = ?,
-            tpay_response_raw = COALESCE(?, tpay_response_raw)
-        WHERE tpay_transaction_id = ?
-        """,
-        (
-            now,
-            payment_status,
-            tpay_response_raw,
-            tpay_transaction_id,
-        ),
-    )
+    if payment_status == "oplacone":
+        cursor.execute(
+            """
+            UPDATE orders
+            SET
+                updated_at = ?,
+                payment_status = ?,
+                tpay_response_raw = COALESCE(?, tpay_response_raw),
+                paid_at = COALESCE(paid_at, ?)
+            WHERE tpay_transaction_id = ?
+            """,
+            (
+                now,
+                payment_status,
+                tpay_response_raw,
+                now,
+                tpay_transaction_id,
+            ),
+        )
+    else:
+        cursor.execute(
+            """
+            UPDATE orders
+            SET
+                updated_at = ?,
+                payment_status = ?,
+                tpay_response_raw = COALESCE(?, tpay_response_raw)
+            WHERE tpay_transaction_id = ?
+            """,
+            (
+                now,
+                payment_status,
+                tpay_response_raw,
+                tpay_transaction_id,
+            ),
+        )
 
     conn.commit()
     conn.close()
+
 
 def update_order_payment_status_by_id(
     order_id: int,
@@ -214,25 +244,46 @@ def update_order_payment_status_by_id(
 
     now = datetime.utcnow().isoformat()
 
-    cursor.execute(
-        """
-        UPDATE orders
-        SET
-            updated_at = ?,
-            payment_status = ?,
-            tpay_response_raw = COALESCE(?, tpay_response_raw)
-        WHERE id = ?
-        """,
-        (
-            now,
-            payment_status,
-            tpay_response_raw,
-            order_id,
-        ),
-    )
+    if payment_status == "oplacone":
+        cursor.execute(
+            """
+            UPDATE orders
+            SET
+                updated_at = ?,
+                payment_status = ?,
+                tpay_response_raw = COALESCE(?, tpay_response_raw),
+                paid_at = COALESCE(paid_at, ?)
+            WHERE id = ?
+            """,
+            (
+                now,
+                payment_status,
+                tpay_response_raw,
+                now,
+                order_id,
+            ),
+        )
+    else:
+        cursor.execute(
+            """
+            UPDATE orders
+            SET
+                updated_at = ?,
+                payment_status = ?,
+                tpay_response_raw = COALESCE(?, tpay_response_raw)
+            WHERE id = ?
+            """,
+            (
+                now,
+                payment_status,
+                tpay_response_raw,
+                order_id,
+            ),
+        )
 
     conn.commit()
     conn.close()
+
 
 def get_order_stats() -> dict:
     conn = get_connection()
@@ -304,6 +355,7 @@ def get_order_stats() -> dict:
         FROM orders
         WHERE payment_status = 'oplacone'
           AND order_status != 'zrealizowane'
+          AND order_status != 'zamkniete'
         """
     )
     queue_count = cursor.fetchone()["cnt"]
@@ -378,12 +430,19 @@ def update_order_status(
     new_payment_status = payment_status if payment_status is not None else current_order["payment_status"]
     new_order_status = order_status if order_status is not None else current_order["order_status"]
     new_notes = notes if notes is not None else current_order["notes"]
+    current_paid_at = current_order["paid_at"]
+
+    if new_payment_status == "oplacone" and not current_paid_at:
+        new_paid_at = now
+    else:
+        new_paid_at = current_paid_at
 
     cursor.execute(
         """
         UPDATE orders
         SET
             updated_at = ?,
+            paid_at = ?,
             payment_status = ?,
             order_status = ?,
             notes = ?
@@ -391,6 +450,7 @@ def update_order_status(
         """,
         (
             now,
+            new_paid_at,
             new_payment_status,
             new_order_status,
             new_notes,
@@ -400,4 +460,3 @@ def update_order_status(
 
     conn.commit()
     conn.close()
-

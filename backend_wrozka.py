@@ -12,8 +12,6 @@ from db import (
     update_order_payment_status_by_id,
     update_order_status,
     get_order_stats,
-    get_order_by_transaction_id,
-    update_payment_status_by_transaction_id,
 )
 
 load_dotenv()
@@ -22,9 +20,9 @@ app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "151884455555556411887641796")
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").strip()
-TPAY_CLIENT_ID = os.getenv("TPAY_CLIENT_ID")
-TPAY_CLIENT_SECRET = os.getenv("TPAY_CLIENT_SECRET")
-TPAY_API_BASE = os.getenv("TPAY_API_BASE", "https://openapi.sandbox.tpay.com")
+TPAY_CLIENT_ID = os.getenv("TPAY_CLIENT_ID", "").strip()
+TPAY_CLIENT_SECRET = os.getenv("TPAY_CLIENT_SECRET", "").strip()
+TPAY_API_BASE = os.getenv("TPAY_API_BASE", "https://openapi.sandbox.tpay.com").strip()
 TPAY_WEBHOOK_URL = os.getenv("TPAY_WEBHOOK_URL", "").strip()
 
 ADMIN_LOGIN = os.getenv("ADMIN_LOGIN", "admin")
@@ -86,7 +84,7 @@ def map_tpay_status(status: str | None) -> str:
         return "oplacone"
     if normalized in ["pending", "created"]:
         return "oczekuje_na_platnosc"
-    if normalized in ["declined", "failed", "canceled", "cancelled"]:
+    if normalized in ["declined", "failed", "canceled", "cancelled", "chargeback"]:
         return "anulowane"
 
     return normalized or "nieznany"
@@ -107,7 +105,6 @@ def get_tpay_token():
 
     print("=== TPAY OAUTH DEBUG ===")
     print("TPAY_API_BASE:", TPAY_API_BASE)
-    print("TPAY_CLIENT_ID:", TPAY_CLIENT_ID)
     print("TPAY_CLIENT_ID length:", len(TPAY_CLIENT_ID) if TPAY_CLIENT_ID else 0)
     print("TPAY_CLIENT_SECRET length:", len(TPAY_CLIENT_SECRET) if TPAY_CLIENT_SECRET else 0)
     print("TPAY_CLIENT_SECRET suffix:", TPAY_CLIENT_SECRET[-6:] if TPAY_CLIENT_SECRET else None)
@@ -233,6 +230,7 @@ def admin_orders():
                     "id": row["id"],
                     "created_at": row["created_at"],
                     "updated_at": row["updated_at"],
+                    "paid_at": row["paid_at"],
                     "customer_name": row["customer_name"],
                     "customer_email": row["customer_email"],
                     "package_name": row["package_name"],
@@ -309,6 +307,12 @@ def complete_order(order_id: int):
         if order is None:
             return jsonify({"error": "Nie znaleziono zamówienia"}), 404
 
+        if (order["payment_status"] or "").lower() != "oplacone":
+            return jsonify({"error": "Nie można zrealizować nieopłaconego zamówienia"}), 400
+
+        if (order["order_status"] or "").lower() == "zamkniete":
+            return jsonify({"error": "Nie można zrealizować zamkniętego zamówienia"}), 400
+
         update_order_status(
             order_id=order_id,
             order_status="zrealizowane",
@@ -323,6 +327,39 @@ def complete_order(order_id: int):
         )
     except Exception as e:
         return jsonify({"error": "Błąd oznaczania zamówienia", "details": str(e)}), 500
+
+
+@app.route("/api/admin/orders/<int:order_id>/close", methods=["POST"])
+def close_order(order_id: int):
+    auth_error = require_admin()
+    if auth_error:
+        return auth_error
+
+    try:
+        order = get_order_by_id(order_id)
+        if order is None:
+            return jsonify({"error": "Nie znaleziono zamówienia"}), 404
+
+        if (order["payment_status"] or "").lower() == "oplacone":
+            return jsonify({"error": "Nie można zamknąć opłaconego zamówienia jako nieopłacone"}), 400
+
+        if (order["order_status"] or "").lower() == "zrealizowane":
+            return jsonify({"error": "Nie można zamknąć zrealizowanego zamówienia"}), 400
+
+        update_order_status(
+            order_id=order_id,
+            order_status="zamkniete",
+        )
+
+        return jsonify(
+            {
+                "ok": True,
+                "order_id": order_id,
+                "order_status": "zamkniete",
+            }
+        )
+    except Exception as e:
+        return jsonify({"error": "Błąd zamykania zamówienia", "details": str(e)}), 500
 
 
 @app.route("/api/admin/orders/<int:order_id>/notes", methods=["POST"])
@@ -523,4 +560,3 @@ def create_payment():
 if __name__ == "__main__":
     init_db()
     app.run(host="127.0.0.1", port=5000, debug=True)
-
