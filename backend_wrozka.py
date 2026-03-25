@@ -353,49 +353,60 @@ def update_order_notes(order_id: int):
 def tpay_webhook():
     try:
         raw_body = request.get_data(as_text=True)
-        data = request.get_json(silent=True) or {}
+        form = request.form.to_dict(flat=True)
 
-        transaction_id = (
-            data.get("transactionId")
-            or data.get("id")
-            or data.get("transaction_id")
-        )
-
-        payment_status = (
-            data.get("status")
-            or data.get("paymentStatus")
-            or data.get("payment_status")
-        )
+        merchant_id = (form.get("id") or "").strip()
+        tr_id = (form.get("tr_id") or "").strip()
+        tr_crc = (form.get("tr_crc") or "").strip()
+        tr_amount = (form.get("tr_amount") or "").strip()
+        tr_paid = (form.get("tr_paid") or "").strip()
+        tr_status = (form.get("tr_status") or "").strip().lower()
+        md5sum = (form.get("md5sum") or "").strip()
 
         print("=== WEBHOOK TPAY ===")
         print("BODY:", raw_body)
-        print("PARSED:", data)
-        print("TRANSACTION ID:", transaction_id)
-        print("PAYMENT STATUS:", payment_status)
+        print("FORM:", form)
+        print("MERCHANT ID:", merchant_id)
+        print("TR_ID:", tr_id)
+        print("TR_CRC:", tr_crc)
+        print("TR_AMOUNT:", tr_amount)
+        print("TR_PAID:", tr_paid)
+        print("TR_STATUS:", tr_status)
+        print("MD5SUM:", md5sum)
 
-        if not transaction_id:
-            return jsonify({"error": "Brak transaction_id w webhooku"}), 400
+        if not tr_crc:
+            print("WEBHOOK ERROR: Brak tr_crc")
+            return "FALSE", 400
 
-        if not payment_status:
-            return jsonify({"error": "Brak statusu płatności w webhooku"}), 400
+        try:
+            order_id = int(tr_crc)
+        except ValueError:
+            print("WEBHOOK ERROR: Nieprawidłowe tr_crc")
+            return "FALSE", 400
 
-        order = get_order_by_transaction_id(transaction_id)
+        order = get_order_by_id(order_id)
         if order is None:
-            return jsonify({"error": "Nie znaleziono zamówienia dla tej transakcji"}), 404
+            print("WEBHOOK ERROR: Nie znaleziono zamówienia")
+            return "FALSE", 404
 
-        mapped_status = map_tpay_status(payment_status)
-        print("MAPPED STATUS:", mapped_status)
+        if tr_status == "true":
+            mapped_status = "oplacone"
+        elif tr_status == "chargeback":
+            mapped_status = "anulowane"
+        else:
+            mapped_status = "oczekuje_na_platnosc"
 
-        update_payment_status_by_transaction_id(
-            tpay_transaction_id=transaction_id,
+        update_order_payment_status_by_id(
+            order_id=order_id,
             payment_status=mapped_status,
             tpay_response_raw=raw_body,
         )
 
-        return jsonify({"ok": True}), 200
+        return "TRUE", 200
 
     except Exception as e:
-        return jsonify({"error": "Błąd webhooka", "details": str(e)}), 500
+        print("WEBHOOK ERROR:", str(e))
+        return "FALSE", 500
 
 
 @app.route("/api/create-payment", methods=["POST"])
@@ -447,6 +458,7 @@ def create_payment():
         payload = {
             "amount": amount,
             "description": f"Zamówienie #{order_id} | {description}",
+            "hiddenDescription": str(order_id),
             "payer": {
                 "name": name,
                 "email": email,
@@ -511,3 +523,4 @@ def create_payment():
 if __name__ == "__main__":
     init_db()
     app.run(host="127.0.0.1", port=5000, debug=True)
+
