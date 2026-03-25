@@ -17,6 +17,7 @@ from db import (
 load_dotenv()
 
 app = Flask(__name__)
+init_db()
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "151884455555556411887641796")
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").strip()
@@ -560,3 +561,4 @@ def create_payment():
 if __name__ == "__main__":
     init_db()
     app.run(host="127.0.0.1", port=5000, debug=True)
+
