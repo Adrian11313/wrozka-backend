@@ -1,6 +1,7 @@
 import sqlite3
 from pathlib import Path
 from datetime import datetime, timedelta
+import json
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "orders.db"
@@ -43,8 +44,285 @@ def init_db() -> None:
     except Exception:
         pass
 
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS site_settings (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            site_name TEXT,
+            site_bio TEXT,
+            footer_text TEXT,
+            avatar_image_url TEXT,
+            hero_image_url TEXT,
+            modal_image_url TEXT,
+            hero_title TEXT,
+            hero_subtitle TEXT,
+            modal_title TEXT,
+            modal_subtitle TEXT,
+            modal_headline TEXT,
+            modal_description TEXT,
+            modal_form_text TEXT,
+            donation_title TEXT,
+            donation_description TEXT,
+            show_social_links INTEGER NOT NULL DEFAULT 1,
+            show_quick_links INTEGER NOT NULL DEFAULT 1,
+            show_visual_card INTEGER NOT NULL DEFAULT 1,
+            show_packages_section INTEGER NOT NULL DEFAULT 1,
+            show_donation_section INTEGER NOT NULL DEFAULT 1,
+            show_modal_portal INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS site_social_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            label TEXT NOT NULL,
+            url TEXT NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS site_quick_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            subtitle TEXT,
+            image_url TEXT,
+            action_type TEXT NOT NULL,
+            action_value TEXT,
+            is_highlight INTEGER NOT NULL DEFAULT 0,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS site_packages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            price TEXT NOT NULL,
+            label TEXT NOT NULL,
+            description TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            is_custom_amount INTEGER NOT NULL DEFAULT 0
+        )
+        """
+    )
+
+    ensure_default_site_config(cursor)
+
     conn.commit()
     conn.close()
+
+
+def ensure_default_site_config(cursor: sqlite3.Cursor) -> None:
+    cursor.execute("SELECT COUNT(*) AS cnt FROM site_settings")
+    site_settings_count = cursor.fetchone()["cnt"]
+
+    if site_settings_count == 0:
+        cursor.execute(
+            """
+            INSERT INTO site_settings (
+                id,
+                site_name,
+                site_bio,
+                footer_text,
+                avatar_image_url,
+                hero_image_url,
+                modal_image_url,
+                hero_title,
+                hero_subtitle,
+                modal_title,
+                modal_subtitle,
+                modal_headline,
+                modal_description,
+                modal_form_text,
+                donation_title,
+                donation_description,
+                show_social_links,
+                show_quick_links,
+                show_visual_card,
+                show_packages_section,
+                show_donation_section,
+                show_modal_portal
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                1,
+                "Kamelia",
+                "Duchowa przewodniczka, tarot i odpowiedzi online. Zadaj pytanie, wybierz pakiet i przejdź do płatności.",
+                "Wróżka Kamelia • wersja testowa • React + Flask + Tpay",
+                "",
+                "",
+                "",
+                "Kamelia zaprasza",
+                "Tarot, energia i odpowiedzi dla Ciebie",
+                "Portal pytań",
+                "Wpisz dane, wybierz pakiet i przejdź do płatności.",
+                "Zadaj pytanie",
+                "Tarot, energia, relacje i szybka odpowiedź online.",
+                "Podaj imię, e-mail, wybierz pakiet i przejdź do płatności Tpay. Możesz też wpisać pytanie do wróżki.",
+                "Dowolna wpłata",
+                "Jeśli chcesz po prostu wesprzeć Wróżkę Kameliię, wpisz dowolną kwotę i przejdź do płatności.",
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+            ),
+        )
+
+    cursor.execute("SELECT COUNT(*) AS cnt FROM site_social_links")
+    social_count = cursor.fetchone()["cnt"]
+
+    if social_count == 0:
+        default_social_links = [
+            ("TikTok", "https://www.tiktok.com/@wrozka_kamelia", 1, 1),
+            ("Instagram", "https://www.instagram.com/wrozka_kamelia", 2, 1),
+            ("Facebook", "https://www.facebook.com/Kamelia.Wrozka", 3, 1),
+            ("WWW", "https://www.wrozkakamelia.pl/", 4, 1),
+        ]
+
+        cursor.executemany(
+            """
+            INSERT INTO site_social_links (label, url, sort_order, is_active)
+            VALUES (?, ?, ?, ?)
+            """,
+            default_social_links,
+        )
+
+    cursor.execute("SELECT COUNT(*) AS cnt FROM site_quick_links")
+    quick_links_count = cursor.fetchone()["cnt"]
+
+    if quick_links_count == 0:
+        default_quick_links = [
+            (
+                "PORTAL – zadaj pytanie teraz",
+                "Szybka konsultacja i płatność online",
+                "",
+                "open_modal",
+                "portal",
+                1,
+                1,
+                1,
+            ),
+            (
+                "CENNIK – pakiety i zasady",
+                "Sprawdź ofertę i wybierz wariant",
+                "",
+                "scroll_to",
+                "pakiety",
+                0,
+                2,
+                1,
+            ),
+            (
+                "Oficjalna strona Kamelii",
+                "Pełna oferta i kontakt",
+                "",
+                "external_url",
+                "https://www.wrozkakamelia.pl/",
+                0,
+                3,
+                1,
+            ),
+            (
+                "TikTok",
+                "Live i krótkie materiały",
+                "",
+                "external_url",
+                "https://www.tiktok.com/@wrozka_kamelia",
+                0,
+                4,
+                1,
+            ),
+            (
+                "Instagram",
+                "Aktualności i kontakt",
+                "",
+                "external_url",
+                "https://www.instagram.com/wrozka_kamelia",
+                0,
+                5,
+                1,
+            ),
+            (
+                "Facebook",
+                "Społeczność i informacje",
+                "",
+                "external_url",
+                "https://www.facebook.com/Kamelia.Wrozka",
+                0,
+                6,
+                1,
+            ),
+        ]
+
+        cursor.executemany(
+            """
+            INSERT INTO site_quick_links (
+                title,
+                subtitle,
+                image_url,
+                action_type,
+                action_value,
+                is_highlight,
+                sort_order,
+                is_active
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            default_quick_links,
+        )
+
+    cursor.execute("SELECT COUNT(*) AS cnt FROM site_packages")
+    packages_count = cursor.fetchone()["cnt"]
+
+    if packages_count == 0:
+        default_packages = [
+            ("Szybka odpowiedź", "29.00", "29 zł", "Jedno pytanie i szybka odpowiedź.", 1, 1, 0),
+            ("Rozkład dnia", "59.00", "59 zł", "Szersza interpretacja i wskazówki.", 2, 1, 0),
+            ("Sesja premium", "119.00", "119 zł", "Rozbudowana analiza z priorytetem.", 3, 1, 0),
+        ]
+
+        cursor.executemany(
+            """
+            INSERT INTO site_packages (
+                name,
+                price,
+                label,
+                description,
+                sort_order,
+                is_active,
+                is_custom_amount
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            default_packages,
+        )
+
+
+def row_to_dict(row: sqlite3.Row | None) -> dict | None:
+    if row is None:
+        return None
+    return {key: row[key] for key in row.keys()}
+
+
+def rows_to_dicts(rows: list[sqlite3.Row]) -> list[dict]:
+    return [{key: row[key] for key in row.keys()} for row in rows]
+
+
+def normalize_bool_int(value) -> int:
+    return 1 if bool(value) else 0
 
 
 def create_order(
@@ -457,6 +735,219 @@ def update_order_status(
             order_id,
         ),
     )
+
+    conn.commit()
+    conn.close()
+
+
+def get_site_config() -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM site_settings WHERE id = 1")
+    settings_row = cursor.fetchone()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM site_social_links
+        ORDER BY sort_order ASC, id ASC
+        """
+    )
+    social_rows = cursor.fetchall()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM site_quick_links
+        ORDER BY sort_order ASC, id ASC
+        """
+    )
+    quick_link_rows = cursor.fetchall()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM site_packages
+        ORDER BY sort_order ASC, id ASC
+        """
+    )
+    package_rows = cursor.fetchall()
+
+    conn.close()
+
+    settings = row_to_dict(settings_row) or {}
+
+    social_links = rows_to_dicts(social_rows)
+    quick_links = rows_to_dicts(quick_link_rows)
+    packages = rows_to_dicts(package_rows)
+
+    return {
+        "settings": settings,
+        "social_links": social_links,
+        "quick_links": quick_links,
+        "packages": packages,
+    }
+
+
+def save_site_config(
+    settings: dict,
+    social_links: list[dict],
+    quick_links: list[dict],
+    packages: list[dict],
+) -> None:
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        INSERT INTO site_settings (
+            id,
+            site_name,
+            site_bio,
+            footer_text,
+            avatar_image_url,
+            hero_image_url,
+            modal_image_url,
+            hero_title,
+            hero_subtitle,
+            modal_title,
+            modal_subtitle,
+            modal_headline,
+            modal_description,
+            modal_form_text,
+            donation_title,
+            donation_description,
+            show_social_links,
+            show_quick_links,
+            show_visual_card,
+            show_packages_section,
+            show_donation_section,
+            show_modal_portal
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            site_name = excluded.site_name,
+            site_bio = excluded.site_bio,
+            footer_text = excluded.footer_text,
+            avatar_image_url = excluded.avatar_image_url,
+            hero_image_url = excluded.hero_image_url,
+            modal_image_url = excluded.modal_image_url,
+            hero_title = excluded.hero_title,
+            hero_subtitle = excluded.hero_subtitle,
+            modal_title = excluded.modal_title,
+            modal_subtitle = excluded.modal_subtitle,
+            modal_headline = excluded.modal_headline,
+            modal_description = excluded.modal_description,
+            modal_form_text = excluded.modal_form_text,
+            donation_title = excluded.donation_title,
+            donation_description = excluded.donation_description,
+            show_social_links = excluded.show_social_links,
+            show_quick_links = excluded.show_quick_links,
+            show_visual_card = excluded.show_visual_card,
+            show_packages_section = excluded.show_packages_section,
+            show_donation_section = excluded.show_donation_section,
+            show_modal_portal = excluded.show_modal_portal
+        """,
+        (
+            1,
+            settings.get("site_name", ""),
+            settings.get("site_bio", ""),
+            settings.get("footer_text", ""),
+            settings.get("avatar_image_url", ""),
+            settings.get("hero_image_url", ""),
+            settings.get("modal_image_url", ""),
+            settings.get("hero_title", ""),
+            settings.get("hero_subtitle", ""),
+            settings.get("modal_title", ""),
+            settings.get("modal_subtitle", ""),
+            settings.get("modal_headline", ""),
+            settings.get("modal_description", ""),
+            settings.get("modal_form_text", ""),
+            settings.get("donation_title", ""),
+            settings.get("donation_description", ""),
+            normalize_bool_int(settings.get("show_social_links", True)),
+            normalize_bool_int(settings.get("show_quick_links", True)),
+            normalize_bool_int(settings.get("show_visual_card", True)),
+            normalize_bool_int(settings.get("show_packages_section", True)),
+            normalize_bool_int(settings.get("show_donation_section", True)),
+            normalize_bool_int(settings.get("show_modal_portal", True)),
+        ),
+    )
+
+    cursor.execute("DELETE FROM site_social_links")
+    for item in social_links:
+        cursor.execute(
+            """
+            INSERT INTO site_social_links (
+                label,
+                url,
+                sort_order,
+                is_active
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                item.get("label", ""),
+                item.get("url", ""),
+                int(item.get("sort_order", 0)),
+                normalize_bool_int(item.get("is_active", True)),
+            ),
+        )
+
+    cursor.execute("DELETE FROM site_quick_links")
+    for item in quick_links:
+        cursor.execute(
+            """
+            INSERT INTO site_quick_links (
+                title,
+                subtitle,
+                image_url,
+                action_type,
+                action_value,
+                is_highlight,
+                sort_order,
+                is_active
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                item.get("title", ""),
+                item.get("subtitle", ""),
+                item.get("image_url", ""),
+                item.get("action_type", "external_url"),
+                item.get("action_value", ""),
+                normalize_bool_int(item.get("is_highlight", False)),
+                int(item.get("sort_order", 0)),
+                normalize_bool_int(item.get("is_active", True)),
+            ),
+        )
+
+    cursor.execute("DELETE FROM site_packages")
+    for item in packages:
+        cursor.execute(
+            """
+            INSERT INTO site_packages (
+                name,
+                price,
+                label,
+                description,
+                sort_order,
+                is_active,
+                is_custom_amount
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                item.get("name", ""),
+                item.get("price", ""),
+                item.get("label", ""),
+                item.get("description", ""),
+                int(item.get("sort_order", 0)),
+                normalize_bool_int(item.get("is_active", True)),
+                normalize_bool_int(item.get("is_custom_amount", False)),
+            ),
+        )
 
     conn.commit()
     conn.close()

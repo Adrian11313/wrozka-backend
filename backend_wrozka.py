@@ -12,6 +12,8 @@ from db import (
     update_order_payment_status_by_id,
     update_order_status,
     get_order_stats,
+    get_site_config,
+    save_site_config,
 )
 
 load_dotenv()
@@ -165,6 +167,69 @@ def debug_tpay_env():
         "frontend_url": FRONTEND_URL,
         "allowed_origins": allowed_origins,
     })
+
+
+@app.route("/api/site-config", methods=["GET"])
+def public_site_config():
+    try:
+        config = get_site_config()
+
+        settings = config.get("settings", {})
+        social_links = config.get("social_links", [])
+        quick_links = config.get("quick_links", [])
+        packages = config.get("packages", [])
+
+        social_links = [item for item in social_links if item.get("is_active")]
+        quick_links = [item for item in quick_links if item.get("is_active")]
+        packages = [item for item in packages if item.get("is_active")]
+
+        return jsonify({
+            "settings": settings,
+            "social_links": social_links,
+            "quick_links": quick_links,
+            "packages": packages,
+        })
+    except Exception as e:
+        return jsonify({"error": "Błąd pobierania konfiguracji strony", "details": str(e)}), 500
+
+
+@app.route("/api/admin/site-config", methods=["GET"])
+def admin_site_config():
+    auth_error = require_admin()
+    if auth_error:
+        return auth_error
+
+    try:
+        config = get_site_config()
+        return jsonify(config)
+    except Exception as e:
+        return jsonify({"error": "Błąd pobierania konfiguracji strony", "details": str(e)}), 500
+
+
+@app.route("/api/admin/site-config", methods=["POST"])
+def admin_save_site_config():
+    auth_error = require_admin()
+    if auth_error:
+        return auth_error
+
+    try:
+        data = request.get_json(force=True) or {}
+
+        settings = data.get("settings") or {}
+        social_links = data.get("social_links") or []
+        quick_links = data.get("quick_links") or []
+        packages = data.get("packages") or []
+
+        save_site_config(
+            settings=settings,
+            social_links=social_links,
+            quick_links=quick_links,
+            packages=packages,
+        )
+
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": "Błąd zapisu konfiguracji strony", "details": str(e)}), 500
 
 
 @app.route("/api/admin/login", methods=["OPTIONS"])
@@ -561,4 +626,3 @@ def create_payment():
 if __name__ == "__main__":
     init_db()
     app.run(host="127.0.0.1", port=5000, debug=True)
-
