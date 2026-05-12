@@ -193,6 +193,46 @@ def public_site_config():
         return jsonify({"error": "Błąd pobierania konfiguracji strony", "details": str(e)}), 500
 
 
+@app.route("/api/live-queue", methods=["GET"])
+def public_live_queue():
+    try:
+        rows = get_all_orders()
+
+        queue_orders = []
+        for row in rows:
+            payment_status = (row["payment_status"] or "").lower()
+            order_status = (row["order_status"] or "").lower()
+
+            if (
+                payment_status == "oplacone"
+                and order_status != "zrealizowane"
+                and order_status != "zamkniete"
+            ):
+                queue_orders.append(
+                    {
+                        "id": row["id"],
+                        "customer_name": row["customer_name"],
+                        "package_name": row["package_name"],
+                        "paid_at": row["paid_at"],
+                        "created_at": row["created_at"],
+                    }
+                )
+
+        def sort_key(order):
+            return order.get("paid_at") or order.get("created_at") or ""
+
+        queue_orders.sort(key=sort_key)
+
+        return jsonify({"queue": queue_orders})
+
+    except Exception as e:
+        return jsonify(
+            {
+                "error": "Błąd pobierania publicznej kolejki",
+                "details": str(e),
+            }
+        ), 500
+
 @app.route("/api/admin/site-config", methods=["GET"])
 def admin_site_config():
     auth_error = require_admin()
@@ -626,3 +666,4 @@ def create_payment():
 if __name__ == "__main__":
     init_db()
     app.run(host="127.0.0.1", port=5000, debug=True)
+
