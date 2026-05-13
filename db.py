@@ -136,8 +136,49 @@ def init_db() -> None:
         """
     )
 
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS live_queue_config (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            enabled INTEGER NOT NULL DEFAULT 1,
+            title_text TEXT NOT NULL DEFAULT 'Kolejka',
+            subtitle_text TEXT NOT NULL DEFAULT 'Kto jest następny do wróżby?',
+            live_badge_text TEXT NOT NULL DEFAULT 'LIVE QUEUE',
+            show_live_badge INTEGER NOT NULL DEFAULT 1,
+            show_title INTEGER NOT NULL DEFAULT 1,
+            show_subtitle INTEGER NOT NULL DEFAULT 1,
+            show_queue_count INTEGER NOT NULL DEFAULT 1,
+            show_updated_at INTEGER NOT NULL DEFAULT 1,
+            show_next_person INTEGER NOT NULL DEFAULT 1,
+            show_package_name INTEGER NOT NULL DEFAULT 1,
+            show_position_number INTEGER NOT NULL DEFAULT 1,
+            max_visible_items INTEGER NOT NULL DEFAULT 2,
+            position_top INTEGER NOT NULL DEFAULT 40,
+            position_left INTEGER NOT NULL DEFAULT 32,
+            overlay_width INTEGER NOT NULL DEFAULT 340,
+            title_font_size INTEGER NOT NULL DEFAULT 42,
+            subtitle_font_size INTEGER NOT NULL DEFAULT 15,
+            next_label_font_size INTEGER NOT NULL DEFAULT 12,
+            next_name_font_size INTEGER NOT NULL DEFAULT 36,
+            item_name_font_size INTEGER NOT NULL DEFAULT 18,
+            item_package_font_size INTEGER NOT NULL DEFAULT 11,
+            badge_font_size INTEGER NOT NULL DEFAULT 10,
+            line_gap INTEGER NOT NULL DEFAULT 8,
+            background_opacity REAL NOT NULL DEFAULT 0.0,
+            text_shadow_enabled INTEGER NOT NULL DEFAULT 1,
+            accent_color TEXT NOT NULL DEFAULT '#f59e0b',
+            title_color TEXT NOT NULL DEFAULT '#fde68a',
+            text_color TEXT NOT NULL DEFAULT '#ffffff',
+            subtitle_color TEXT NOT NULL DEFAULT '#f5d0fe',
+            compact_mode INTEGER NOT NULL DEFAULT 1,
+            updated_at TEXT
+        )
+        """
+    )
+
     ensure_default_site_config(cursor)
     ensure_default_live_state(cursor)
+    ensure_default_live_queue_config(cursor)
 
     conn.commit()
     conn.close()
@@ -373,6 +414,91 @@ def ensure_default_live_state(cursor: sqlite3.Cursor) -> None:
                 now,
             ),
         )
+
+
+def ensure_default_live_queue_config(cursor: sqlite3.Cursor) -> None:
+    cursor.execute("SELECT COUNT(*) AS cnt FROM live_queue_config")
+    live_queue_config_count = cursor.fetchone()["cnt"]
+
+    if live_queue_config_count == 0:
+        now = datetime.utcnow().isoformat()
+
+        cursor.execute(
+            """
+            INSERT INTO live_queue_config (
+                id,
+                enabled,
+                title_text,
+                subtitle_text,
+                live_badge_text,
+                show_live_badge,
+                show_title,
+                show_subtitle,
+                show_queue_count,
+                show_updated_at,
+                show_next_person,
+                show_package_name,
+                show_position_number,
+                max_visible_items,
+                position_top,
+                position_left,
+                overlay_width,
+                title_font_size,
+                subtitle_font_size,
+                next_label_font_size,
+                next_name_font_size,
+                item_name_font_size,
+                item_package_font_size,
+                badge_font_size,
+                line_gap,
+                background_opacity,
+                text_shadow_enabled,
+                accent_color,
+                title_color,
+                text_color,
+                subtitle_color,
+                compact_mode,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                1,
+                1,
+                "Kolejka",
+                "Kto jest następny do wróżby?",
+                "LIVE QUEUE",
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                1,
+                2,
+                40,
+                32,
+                340,
+                42,
+                15,
+                12,
+                36,
+                18,
+                11,
+                10,
+                8,
+                0.0,
+                1,
+                "#f59e0b",
+                "#fde68a",
+                "#ffffff",
+                "#f5d0fe",
+                1,
+                now,
+            ),
+        )
+
 
 def row_to_dict(row: sqlite3.Row | None) -> dict | None:
     if row is None:
@@ -1014,6 +1140,281 @@ def save_site_config(
 
     conn.commit()
     conn.close()
+
+
+
+def get_live_queue_config() -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM live_queue_config WHERE id = 1")
+    row = cursor.fetchone()
+
+    conn.close()
+
+    if row is None:
+        return {
+            "enabled": True,
+            "title_text": "Kolejka",
+            "subtitle_text": "Kto jest następny do wróżby?",
+            "live_badge_text": "LIVE QUEUE",
+            "show_live_badge": True,
+            "show_title": True,
+            "show_subtitle": True,
+            "show_queue_count": True,
+            "show_updated_at": True,
+            "show_next_person": True,
+            "show_package_name": True,
+            "show_position_number": True,
+            "max_visible_items": 2,
+            "position_top": 40,
+            "position_left": 32,
+            "overlay_width": 340,
+            "title_font_size": 42,
+            "subtitle_font_size": 15,
+            "next_label_font_size": 12,
+            "next_name_font_size": 36,
+            "item_name_font_size": 18,
+            "item_package_font_size": 11,
+            "badge_font_size": 10,
+            "line_gap": 8,
+            "background_opacity": 0.0,
+            "text_shadow_enabled": True,
+            "accent_color": "#f59e0b",
+            "title_color": "#fde68a",
+            "text_color": "#ffffff",
+            "subtitle_color": "#f5d0fe",
+            "compact_mode": True,
+        }
+
+    return {
+        "enabled": bool(row["enabled"]),
+        "title_text": row["title_text"],
+        "subtitle_text": row["subtitle_text"],
+        "live_badge_text": row["live_badge_text"],
+        "show_live_badge": bool(row["show_live_badge"]),
+        "show_title": bool(row["show_title"]),
+        "show_subtitle": bool(row["show_subtitle"]),
+        "show_queue_count": bool(row["show_queue_count"]),
+        "show_updated_at": bool(row["show_updated_at"]),
+        "show_next_person": bool(row["show_next_person"]),
+        "show_package_name": bool(row["show_package_name"]),
+        "show_position_number": bool(row["show_position_number"]),
+        "max_visible_items": row["max_visible_items"],
+        "position_top": row["position_top"],
+        "position_left": row["position_left"],
+        "overlay_width": row["overlay_width"],
+        "title_font_size": row["title_font_size"],
+        "subtitle_font_size": row["subtitle_font_size"],
+        "next_label_font_size": row["next_label_font_size"],
+        "next_name_font_size": row["next_name_font_size"],
+        "item_name_font_size": row["item_name_font_size"],
+        "item_package_font_size": row["item_package_font_size"],
+        "badge_font_size": row["badge_font_size"],
+        "line_gap": row["line_gap"],
+        "background_opacity": float(row["background_opacity"]),
+        "text_shadow_enabled": bool(row["text_shadow_enabled"]),
+        "accent_color": row["accent_color"],
+        "title_color": row["title_color"],
+        "text_color": row["text_color"],
+        "subtitle_color": row["subtitle_color"],
+        "compact_mode": bool(row["compact_mode"]),
+        "updated_at": row["updated_at"],
+    }
+
+
+def save_live_queue_config(config: dict) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM live_queue_config WHERE id = 1")
+    current = cursor.fetchone()
+
+    now = datetime.utcnow().isoformat()
+
+    def current_or_default(key: str, default):
+        if current is not None and key in current.keys():
+            return current[key]
+        return default
+
+    def text_value(key: str, default: str) -> str:
+        value = config.get(key, current_or_default(key, default))
+        value = str(value or "").strip()
+        return value if value else default
+
+    def int_value(key: str, default: int, minimum: int | None = None, maximum: int | None = None) -> int:
+        try:
+            value = int(config.get(key, current_or_default(key, default)))
+        except Exception:
+            value = default
+
+        if minimum is not None:
+            value = max(minimum, value)
+        if maximum is not None:
+            value = min(maximum, value)
+
+        return value
+
+    def float_value(key: str, default: float, minimum: float | None = None, maximum: float | None = None) -> float:
+        try:
+            value = float(config.get(key, current_or_default(key, default)))
+        except Exception:
+            value = default
+
+        if minimum is not None:
+            value = max(minimum, value)
+        if maximum is not None:
+            value = min(maximum, value)
+
+        return value
+
+    values = {
+        "enabled": normalize_bool_int(config.get("enabled", current_or_default("enabled", True))),
+        "title_text": text_value("title_text", "Kolejka"),
+        "subtitle_text": text_value("subtitle_text", "Kto jest następny do wróżby?"),
+        "live_badge_text": text_value("live_badge_text", "LIVE QUEUE"),
+        "show_live_badge": normalize_bool_int(config.get("show_live_badge", current_or_default("show_live_badge", True))),
+        "show_title": normalize_bool_int(config.get("show_title", current_or_default("show_title", True))),
+        "show_subtitle": normalize_bool_int(config.get("show_subtitle", current_or_default("show_subtitle", True))),
+        "show_queue_count": normalize_bool_int(config.get("show_queue_count", current_or_default("show_queue_count", True))),
+        "show_updated_at": normalize_bool_int(config.get("show_updated_at", current_or_default("show_updated_at", True))),
+        "show_next_person": normalize_bool_int(config.get("show_next_person", current_or_default("show_next_person", True))),
+        "show_package_name": normalize_bool_int(config.get("show_package_name", current_or_default("show_package_name", True))),
+        "show_position_number": normalize_bool_int(config.get("show_position_number", current_or_default("show_position_number", True))),
+        "max_visible_items": int_value("max_visible_items", 2, 0, 10),
+        "position_top": int_value("position_top", 40, 0, 1800),
+        "position_left": int_value("position_left", 32, 0, 1080),
+        "overlay_width": int_value("overlay_width", 340, 180, 1000),
+        "title_font_size": int_value("title_font_size", 42, 12, 120),
+        "subtitle_font_size": int_value("subtitle_font_size", 15, 8, 60),
+        "next_label_font_size": int_value("next_label_font_size", 12, 8, 40),
+        "next_name_font_size": int_value("next_name_font_size", 36, 12, 120),
+        "item_name_font_size": int_value("item_name_font_size", 18, 8, 80),
+        "item_package_font_size": int_value("item_package_font_size", 11, 8, 50),
+        "badge_font_size": int_value("badge_font_size", 10, 7, 40),
+        "line_gap": int_value("line_gap", 8, 0, 80),
+        "background_opacity": float_value("background_opacity", 0.0, 0.0, 1.0),
+        "text_shadow_enabled": normalize_bool_int(config.get("text_shadow_enabled", current_or_default("text_shadow_enabled", True))),
+        "accent_color": text_value("accent_color", "#f59e0b"),
+        "title_color": text_value("title_color", "#fde68a"),
+        "text_color": text_value("text_color", "#ffffff"),
+        "subtitle_color": text_value("subtitle_color", "#f5d0fe"),
+        "compact_mode": normalize_bool_int(config.get("compact_mode", current_or_default("compact_mode", True))),
+    }
+
+    cursor.execute(
+        """
+        INSERT INTO live_queue_config (
+            id,
+            enabled,
+            title_text,
+            subtitle_text,
+            live_badge_text,
+            show_live_badge,
+            show_title,
+            show_subtitle,
+            show_queue_count,
+            show_updated_at,
+            show_next_person,
+            show_package_name,
+            show_position_number,
+            max_visible_items,
+            position_top,
+            position_left,
+            overlay_width,
+            title_font_size,
+            subtitle_font_size,
+            next_label_font_size,
+            next_name_font_size,
+            item_name_font_size,
+            item_package_font_size,
+            badge_font_size,
+            line_gap,
+            background_opacity,
+            text_shadow_enabled,
+            accent_color,
+            title_color,
+            text_color,
+            subtitle_color,
+            compact_mode,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            enabled = excluded.enabled,
+            title_text = excluded.title_text,
+            subtitle_text = excluded.subtitle_text,
+            live_badge_text = excluded.live_badge_text,
+            show_live_badge = excluded.show_live_badge,
+            show_title = excluded.show_title,
+            show_subtitle = excluded.show_subtitle,
+            show_queue_count = excluded.show_queue_count,
+            show_updated_at = excluded.show_updated_at,
+            show_next_person = excluded.show_next_person,
+            show_package_name = excluded.show_package_name,
+            show_position_number = excluded.show_position_number,
+            max_visible_items = excluded.max_visible_items,
+            position_top = excluded.position_top,
+            position_left = excluded.position_left,
+            overlay_width = excluded.overlay_width,
+            title_font_size = excluded.title_font_size,
+            subtitle_font_size = excluded.subtitle_font_size,
+            next_label_font_size = excluded.next_label_font_size,
+            next_name_font_size = excluded.next_name_font_size,
+            item_name_font_size = excluded.item_name_font_size,
+            item_package_font_size = excluded.item_package_font_size,
+            badge_font_size = excluded.badge_font_size,
+            line_gap = excluded.line_gap,
+            background_opacity = excluded.background_opacity,
+            text_shadow_enabled = excluded.text_shadow_enabled,
+            accent_color = excluded.accent_color,
+            title_color = excluded.title_color,
+            text_color = excluded.text_color,
+            subtitle_color = excluded.subtitle_color,
+            compact_mode = excluded.compact_mode,
+            updated_at = excluded.updated_at
+        """,
+        (
+            1,
+            values["enabled"],
+            values["title_text"],
+            values["subtitle_text"],
+            values["live_badge_text"],
+            values["show_live_badge"],
+            values["show_title"],
+            values["show_subtitle"],
+            values["show_queue_count"],
+            values["show_updated_at"],
+            values["show_next_person"],
+            values["show_package_name"],
+            values["show_position_number"],
+            values["max_visible_items"],
+            values["position_top"],
+            values["position_left"],
+            values["overlay_width"],
+            values["title_font_size"],
+            values["subtitle_font_size"],
+            values["next_label_font_size"],
+            values["next_name_font_size"],
+            values["item_name_font_size"],
+            values["item_package_font_size"],
+            values["badge_font_size"],
+            values["line_gap"],
+            values["background_opacity"],
+            values["text_shadow_enabled"],
+            values["accent_color"],
+            values["title_color"],
+            values["text_color"],
+            values["subtitle_color"],
+            values["compact_mode"],
+            now,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return get_live_queue_config()
 
 
 def get_live_control_config() -> dict:

@@ -16,6 +16,8 @@ from db import (
     save_site_config,
     get_live_control_config,
     save_live_control_config,
+    get_live_queue_config,
+    save_live_queue_config,
     get_live_question_state,
     show_next_live_question,
     hide_live_question,
@@ -240,6 +242,58 @@ def public_live_queue():
             }
         ), 500
 
+
+
+
+@app.route("/api/live-queue-config", methods=["GET"])
+def public_live_queue_config():
+    try:
+        config = get_live_queue_config()
+        return jsonify(config)
+    except Exception as e:
+        return jsonify(
+            {
+                "error": "Błąd pobierania konfiguracji kolejki live",
+                "details": str(e),
+            }
+        ), 500
+
+
+@app.route("/api/admin/live-queue-config", methods=["GET"])
+def admin_get_live_queue_config():
+    auth_error = require_admin()
+    if auth_error:
+        return auth_error
+
+    try:
+        config = get_live_queue_config()
+        return jsonify(config)
+    except Exception as e:
+        return jsonify(
+            {
+                "error": "Błąd pobierania konfiguracji kolejki live",
+                "details": str(e),
+            }
+        ), 500
+
+
+@app.route("/api/admin/live-queue-config", methods=["POST"])
+def admin_save_live_queue_config():
+    auth_error = require_admin()
+    if auth_error:
+        return auth_error
+
+    try:
+        data = request.get_json(force=True) or {}
+        config = save_live_queue_config(data)
+        return jsonify({"ok": True, "config": config})
+    except Exception as e:
+        return jsonify(
+            {
+                "error": "Błąd zapisu konfiguracji kolejki live",
+                "details": str(e),
+            }
+        ), 500
 
 
 @app.route("/api/live-question", methods=["GET"])
