@@ -116,7 +116,28 @@ def init_db() -> None:
         """
     )
 
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS live_state (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            current_order_id INTEGER,
+            is_visible INTEGER NOT NULL DEFAULT 0,
+            read_token INTEGER NOT NULL DEFAULT 0,
+            voice_enabled INTEGER NOT NULL DEFAULT 1,
+            show_enabled INTEGER NOT NULL DEFAULT 1,
+            auto_hide_seconds INTEGER NOT NULL DEFAULT 0,
+            hotkey_show TEXT NOT NULL DEFAULT 'F8',
+            hotkey_complete TEXT NOT NULL DEFAULT 'F9',
+            hotkey_hide TEXT NOT NULL DEFAULT 'F10',
+            hotkey_read_again TEXT NOT NULL DEFAULT 'F11',
+            updated_at TEXT
+        )
+        """
+    )
+
     ensure_default_site_config(cursor)
+    ensure_default_live_state(cursor)
 
     conn.commit()
     conn.close()
@@ -310,6 +331,48 @@ def ensure_default_site_config(cursor: sqlite3.Cursor) -> None:
             default_packages,
         )
 
+
+
+def ensure_default_live_state(cursor: sqlite3.Cursor) -> None:
+    cursor.execute("SELECT COUNT(*) AS cnt FROM live_state")
+    live_state_count = cursor.fetchone()["cnt"]
+
+    if live_state_count == 0:
+        now = datetime.utcnow().isoformat()
+
+        cursor.execute(
+            """
+            INSERT INTO live_state (
+                id,
+                current_order_id,
+                is_visible,
+                read_token,
+                voice_enabled,
+                show_enabled,
+                auto_hide_seconds,
+                hotkey_show,
+                hotkey_complete,
+                hotkey_hide,
+                hotkey_read_again,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                1,
+                None,
+                0,
+                0,
+                1,
+                1,
+                0,
+                "F8",
+                "F9",
+                "F10",
+                "F11",
+                now,
+            ),
+        )
 
 def row_to_dict(row: sqlite3.Row | None) -> dict | None:
     if row is None:
@@ -951,3 +1014,296 @@ def save_site_config(
 
     conn.commit()
     conn.close()
+
+
+def get_live_control_config() -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM live_state WHERE id = 1")
+    row = cursor.fetchone()
+
+    conn.close()
+
+    if row is None:
+        return {
+            "voice_enabled": True,
+            "show_enabled": True,
+            "auto_hide_seconds": 0,
+            "hotkey_show": "F8",
+            "hotkey_complete": "F9",
+            "hotkey_hide": "F10",
+            "hotkey_read_again": "F11",
+        }
+
+    return {
+        "voice_enabled": bool(row["voice_enabled"]),
+        "show_enabled": bool(row["show_enabled"]),
+        "auto_hide_seconds": row["auto_hide_seconds"],
+        "hotkey_show": row["hotkey_show"],
+        "hotkey_complete": row["hotkey_complete"],
+        "hotkey_hide": row["hotkey_hide"],
+        "hotkey_read_again": row["hotkey_read_again"],
+    }
+
+
+def save_live_control_config(config: dict) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM live_state WHERE id = 1")
+    current = cursor.fetchone()
+
+    now = datetime.utcnow().isoformat()
+
+    voice_enabled = normalize_bool_int(
+        config.get("voice_enabled", current["voice_enabled"] if current else True)
+    )
+    show_enabled = normalize_bool_int(
+        config.get("show_enabled", current["show_enabled"] if current else True)
+    )
+    auto_hide_seconds = int(
+        config.get("auto_hide_seconds", current["auto_hide_seconds"] if current else 0)
+    )
+    hotkey_show = str(
+        config.get("hotkey_show", current["hotkey_show"] if current else "F8")
+    ).strip() or "F8"
+    hotkey_complete = str(
+        config.get("hotkey_complete", current["hotkey_complete"] if current else "F9")
+    ).strip() or "F9"
+    hotkey_hide = str(
+        config.get("hotkey_hide", current["hotkey_hide"] if current else "F10")
+    ).strip() or "F10"
+    hotkey_read_again = str(
+        config.get("hotkey_read_again", current["hotkey_read_again"] if current else "F11")
+    ).strip() or "F11"
+
+    cursor.execute(
+        """
+        UPDATE live_state
+        SET
+            voice_enabled = ?,
+            show_enabled = ?,
+            auto_hide_seconds = ?,
+            hotkey_show = ?,
+            hotkey_complete = ?,
+            hotkey_hide = ?,
+            hotkey_read_again = ?,
+            updated_at = ?
+        WHERE id = 1
+        """,
+        (
+            voice_enabled,
+            show_enabled,
+            auto_hide_seconds,
+            hotkey_show,
+            hotkey_complete,
+            hotkey_hide,
+            hotkey_read_again,
+            now,
+        ),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return get_live_control_config()
+
+
+def get_live_question_state() -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM live_state WHERE id = 1")
+    state_row = cursor.fetchone()
+
+    if state_row is None:
+        conn.close()
+        return {
+            "is_visible": False,
+            "voice_enabled": True,
+            "show_enabled": True,
+            "read_token": 0,
+            "auto_hide_seconds": 0,
+            "current_order": None,
+        }
+
+    current_order = None
+
+    if state_row["current_order_id"]:
+        cursor.execute(
+            """
+            SELECT *
+            FROM orders
+            WHERE id = ?
+            """,
+            (state_row["current_order_id"],),
+        )
+        order_row = cursor.fetchone()
+        current_order = row_to_dict(order_row)
+
+    result = {
+        "is_visible": bool(state_row["is_visible"]),
+        "voice_enabled": bool(state_row["voice_enabled"]),
+        "show_enabled": bool(state_row["show_enabled"]),
+        "read_token": state_row["read_token"],
+        "auto_hide_seconds": state_row["auto_hide_seconds"],
+        "hotkey_show": state_row["hotkey_show"],
+        "hotkey_complete": state_row["hotkey_complete"],
+        "hotkey_hide": state_row["hotkey_hide"],
+        "hotkey_read_again": state_row["hotkey_read_again"],
+        "updated_at": state_row["updated_at"],
+        "current_order": current_order,
+    }
+
+    conn.close()
+    return result
+
+
+def show_next_live_question() -> dict | None:
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM orders
+        WHERE payment_status = 'oplacone'
+          AND order_status != 'zrealizowane'
+          AND order_status != 'zamkniete'
+        ORDER BY COALESCE(paid_at, created_at) ASC, id ASC
+        LIMIT 1
+        """
+    )
+
+    order_row = cursor.fetchone()
+    now = datetime.utcnow().isoformat()
+
+    if order_row is None:
+        cursor.execute(
+            """
+            UPDATE live_state
+            SET
+                current_order_id = NULL,
+                is_visible = 0,
+                updated_at = ?
+            WHERE id = 1
+            """,
+            (now,),
+        )
+
+        conn.commit()
+        conn.close()
+        return None
+
+    cursor.execute(
+        """
+        UPDATE live_state
+        SET
+            current_order_id = ?,
+            is_visible = 1,
+            read_token = read_token + 1,
+            updated_at = ?
+        WHERE id = 1
+        """,
+        (
+            order_row["id"],
+            now,
+        ),
+    )
+
+    result = row_to_dict(order_row)
+
+    conn.commit()
+    conn.close()
+    return result
+
+
+def hide_live_question() -> None:
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    now = datetime.utcnow().isoformat()
+
+    cursor.execute(
+        """
+        UPDATE live_state
+        SET
+            is_visible = 0,
+            updated_at = ?
+        WHERE id = 1
+        """,
+        (now,),
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def read_live_question_again() -> None:
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    now = datetime.utcnow().isoformat()
+
+    cursor.execute(
+        """
+        UPDATE live_state
+        SET
+            is_visible = 1,
+            read_token = read_token + 1,
+            updated_at = ?
+        WHERE id = 1
+        """,
+        (now,),
+    )
+
+    conn.commit()
+    conn.close()
+
+
+def complete_current_live_question() -> int | None:
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM live_state WHERE id = 1")
+    state_row = cursor.fetchone()
+
+    if state_row is None or not state_row["current_order_id"]:
+        conn.close()
+        return None
+
+    order_id = int(state_row["current_order_id"])
+    now = datetime.utcnow().isoformat()
+
+    cursor.execute(
+        """
+        UPDATE orders
+        SET
+            updated_at = ?,
+            order_status = 'zrealizowane'
+        WHERE id = ?
+        """,
+        (
+            now,
+            order_id,
+        ),
+    )
+
+    cursor.execute(
+        """
+        UPDATE live_state
+        SET
+            current_order_id = NULL,
+            is_visible = 0,
+            updated_at = ?
+        WHERE id = 1
+        """,
+        (now,),
+    )
+
+    conn.commit()
+    conn.close()
+
+    return order_id
+

@@ -14,6 +14,13 @@ from db import (
     get_order_stats,
     get_site_config,
     save_site_config,
+    get_live_control_config,
+    save_live_control_config,
+    get_live_question_state,
+    show_next_live_question,
+    hide_live_question,
+    read_live_question_again,
+    complete_current_live_question,
 )
 
 load_dotenv()
@@ -229,6 +236,183 @@ def public_live_queue():
         return jsonify(
             {
                 "error": "Błąd pobierania publicznej kolejki",
+                "details": str(e),
+            }
+        ), 500
+
+
+
+@app.route("/api/live-question", methods=["GET"])
+def public_live_question():
+    try:
+        state = get_live_question_state()
+        order = state.get("current_order")
+
+        public_order = None
+
+        if state.get("is_visible") and order:
+            public_order = {
+                "id": order["id"],
+                "customer_name": order["customer_name"],
+                "package_name": order["package_name"],
+                "question": order["question"],
+            }
+
+        return jsonify(
+            {
+                "is_visible": bool(state.get("is_visible")),
+                "voice_enabled": bool(state.get("voice_enabled")),
+                "show_enabled": bool(state.get("show_enabled")),
+                "read_token": state.get("read_token", 0),
+                "auto_hide_seconds": state.get("auto_hide_seconds", 0),
+                "order": public_order,
+            }
+        )
+
+    except Exception as e:
+        return jsonify(
+            {
+                "error": "Błąd pobierania pytania live",
+                "details": str(e),
+            }
+        ), 500
+
+
+@app.route("/api/admin/live-control-config", methods=["GET"])
+def admin_get_live_control_config():
+    auth_error = require_admin()
+    if auth_error:
+        return auth_error
+
+    try:
+        config = get_live_control_config()
+        return jsonify(config)
+    except Exception as e:
+        return jsonify(
+            {
+                "error": "Błąd pobierania konfiguracji sterowania live",
+                "details": str(e),
+            }
+        ), 500
+
+
+@app.route("/api/admin/live-control-config", methods=["POST"])
+def admin_save_live_control_config():
+    auth_error = require_admin()
+    if auth_error:
+        return auth_error
+
+    try:
+        data = request.get_json(force=True) or {}
+        config = save_live_control_config(data)
+        return jsonify({"ok": True, "config": config})
+    except Exception as e:
+        return jsonify(
+            {
+                "error": "Błąd zapisu konfiguracji sterowania live",
+                "details": str(e),
+            }
+        ), 500
+
+
+@app.route("/api/admin/live-question/show-next", methods=["POST"])
+def admin_live_question_show_next():
+    auth_error = require_admin()
+    if auth_error:
+        return auth_error
+
+    try:
+        config = get_live_control_config()
+
+        if not config.get("show_enabled", True):
+            return jsonify({"error": "Pokazywanie pytań na live jest wyłączone"}), 400
+
+        order = show_next_live_question()
+
+        if order is None:
+            return jsonify({"error": "Brak opłaconych pytań w kolejce"}), 404
+
+        return jsonify(
+            {
+                "ok": True,
+                "order": {
+                    "id": order["id"],
+                    "customer_name": order["customer_name"],
+                    "package_name": order["package_name"],
+                    "question": order["question"],
+                },
+            }
+        )
+
+    except Exception as e:
+        return jsonify(
+            {
+                "error": "Błąd pokazywania pytania live",
+                "details": str(e),
+            }
+        ), 500
+
+
+@app.route("/api/admin/live-question/hide", methods=["POST"])
+def admin_live_question_hide():
+    auth_error = require_admin()
+    if auth_error:
+        return auth_error
+
+    try:
+        hide_live_question()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify(
+            {
+                "error": "Błąd ukrywania pytania live",
+                "details": str(e),
+            }
+        ), 500
+
+
+@app.route("/api/admin/live-question/read-again", methods=["POST"])
+def admin_live_question_read_again():
+    auth_error = require_admin()
+    if auth_error:
+        return auth_error
+
+    try:
+        read_live_question_again()
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify(
+            {
+                "error": "Błąd ponownego czytania pytania",
+                "details": str(e),
+            }
+        ), 500
+
+
+@app.route("/api/admin/live-question/complete-current", methods=["POST"])
+def admin_live_question_complete_current():
+    auth_error = require_admin()
+    if auth_error:
+        return auth_error
+
+    try:
+        order_id = complete_current_live_question()
+
+        if order_id is None:
+            return jsonify({"error": "Brak aktualnego pytania live"}), 404
+
+        return jsonify(
+            {
+                "ok": True,
+                "order_id": order_id,
+                "order_status": "zrealizowane",
+            }
+        )
+
+    except Exception as e:
+        return jsonify(
+            {
+                "error": "Błąd kończenia aktualnego pytania",
                 "details": str(e),
             }
         ), 500
